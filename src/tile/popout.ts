@@ -111,12 +111,12 @@ export function openPopout({
   // Written with the DOM rather than as markup: nothing a member can choose
   // (their name is in the title) is ever parsed as HTML
   const doc = win.document;
-  doc.title = title;
   doc.head.replaceChildren();
   doc.body.replaceChildren();
   const style = doc.createElement("style");
   style.textContent = STYLE;
   doc.head.append(style);
+  doc.title = title;
 
   const element = doc.createElement("video");
   element.autoplay = true;

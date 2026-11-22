@@ -321,6 +321,179 @@ describe("Publisher", () => {
       expect(track(Track.Source.Microphone)).toBeDefined();
     });
 
+    describe("screen share", () => {
+      function captured(
+        settings: MediaTrackSettings,
+        withAudio = false,
+      ): LocalTrack[] {
+        const video = Object.assign(fakeLocalTrack(Track.Source.ScreenShare), {
+          kind: Track.Kind.Video,
+          mediaStreamTrack: { getSettings: () => settings, contentHint: "" },
+        });
+        const audio = Object.assign(
+          fakeLocalTrack(Track.Source.ScreenShareAudio),
+          { kind: Track.Kind.Audio },
+        );
+        return withAudio ? [video, audio] : [video];
+      }
+      const sharp: PublishRequest = {
+        source: "screenShare",
+        audio: { kind: "device", deviceId: "monitor" },
+        capture: {
+          resolution: { width: 0, height: 0, frameRate: 30 },
+          maxFramerate: 30,
+          autoBitrate: {
+            base: 4_000_000,
+            bitsPerPixel: 3,
+            min: 6_000_000,
+            max: 30_000_000,
+          },
+          codec: "vp8",
+          contentHint: "detail",
+          simulcast: false,
+          degradationPreference: "maintain-resolution",
+        },
+      };
+      let device: MediaStreamTrack;
+      let getUserMedia: ReturnType<typeof vi.fn>;
+
+      beforeEach(() => {
+        device = fakeMediaStreamTrack("audio");
+        getUserMedia = vi.fn(async () =>
+          Promise.resolve({ getAudioTracks: () => [device] }),
+        );
+        vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+        // A raw device track takes its source from the options
+        const publishTrack = vi.mocked(participant.publishTrack);
+        const publishLocalTrack = publishTrack.getMockImplementation()!;
+        publishTrack.mockImplementation(async (t, options) =>
+          "source" in t
+            ? publishLocalTrack(t, options)
+            : publishLocalTrack(
+                Object.assign(fakeLocalTrack(options!.source!), {
+                  mediaStreamTrack: t,
+                }),
+                options,
+              ),
+        );
+      });
+
+      afterEach(() => {
+        vi.unstubAllGlobals();
+      });
+
+      it("captures at the native size and publishes one sharp layer sized to it", async () => {
+        const createScreenTracks = vi
+          .spyOn(participant, "createScreenTracks")
+          .mockResolvedValue(captured({ width: 2560, height: 1440 }));
+
+        await publisher.publish(sharp);
+
+        expect(createScreenTracks).toHaveBeenCalledWith(
+          expect.objectContaining({
+            resolution: { width: 0, height: 0 },
+            contentHint: "detail",
+            audio: false,
+          }),
+        );
+        const [video, options] = vi.mocked(participant.publishTrack).mock
+          .calls[0];
+        expect(options).toEqual({
+          source: Track.Source.ScreenShare,
+          screenShareEncoding: {
+            maxBitrate: 15_059_200,
+            maxFramerate: 30,
+            priority: "high",
+          },
+          videoCodec: "vp8",
+          simulcast: false,
+          degradationPreference: "maintain-resolution",
+        });
+        // Whatever LiveKit made of the hint while publishing, it is put back
+        expect((video as LocalTrack).mediaStreamTrack.contentHint).toBe(
+          "detail",
+        );
+      });
+
+      it("publishes the chosen audio device as the screen share's audio", async () => {
+        vi.spyOn(participant, "createScreenTracks").mockResolvedValue(
+          captured({ width: 1920, height: 1080 }),
+        );
+
+        await publisher.publish(sharp);
+
+        expect(getUserMedia).toHaveBeenCalledWith({
+          audio: {
+            deviceId: { exact: "monitor" },
+            sampleRate: 48000,
+            echoCancellation: false,
+            autoGainControl: false,
+            noiseSuppression: false,
+            voiceIsolation: false,
+            channelCount: 2,
+          },
+        });
+        expect(participant.publishTrack).toHaveBeenLastCalledWith(device, {
+          source: Track.Source.ScreenShareAudio,
+          audioPreset: { maxBitrate: 192_000 },
+          dtx: false,
+          red: false,
+          forceStereo: true,
+        });
+        expect(track(Track.Source.ScreenShareAudio)).toBeDefined();
+      });
+
+      it("publishes the picker's audio where it gave one", async () => {
+        vi.spyOn(participant, "createScreenTracks").mockResolvedValue(
+          captured({ width: 1920, height: 1080 }, true),
+        );
+
+        await publisher.publish({ source: "screenShare" });
+
+        expect(getUserMedia).not.toHaveBeenCalled();
+        expect(track(Track.Source.ScreenShareAudio)).toBeDefined();
+      });
+
+      it("shares without sound where the audio device cannot be opened", async () => {
+        vi.spyOn(participant, "createScreenTracks").mockResolvedValue(
+          captured({ width: 1920, height: 1080 }),
+        );
+        getUserMedia.mockRejectedValue(new Error("gone"));
+
+        await expect(publisher.publish(sharp)).resolves.toBeDefined();
+        expect(track(Track.Source.ScreenShare)).toBeDefined();
+        expect(track(Track.Source.ScreenShareAudio)).toBeUndefined();
+      });
+
+      // element-hq/element-call#3820: a share stopped from the browser's own
+      // controls took its video down and left its audio playing to the room
+      it("takes the audio down when the share ends on its own", async () => {
+        vi.spyOn(participant, "createScreenTracks").mockResolvedValue(
+          captured({ width: 1920, height: 1080 }),
+        );
+        await publisher.publish(sharp);
+
+        await participant.unpublishTrack(track(Track.Source.ScreenShare)!);
+        await flushPromises();
+
+        expect(track(Track.Source.ScreenShareAudio)).toBeUndefined();
+        expect(device.stop).toHaveBeenCalled();
+      });
+
+      it("joins a second request to the capture that is under way", async () => {
+        const createScreenTracks = vi
+          .spyOn(participant, "createScreenTracks")
+          .mockResolvedValue(captured({ width: 1920, height: 1080 }));
+
+        await Promise.all([
+          publisher.publish({ source: "screenShare", audio: false }),
+          publisher.publish({ source: "screenShare", audio: false }),
+        ]);
+
+        expect(createScreenTracks).toHaveBeenCalledOnce();
+      });
+    });
+
     it("unpublishes a screen share through LiveKit, so that its audio goes with it", async () => {
       await publisher.unpublish("screenShare");
       expect(participant.setScreenShareEnabled).toHaveBeenCalledWith(false);
