@@ -10,12 +10,18 @@ import { type TrackRecord } from "./trackStats";
 export type CheckId =
   | "mic_audio"
   | "share_resolution"
-  | "share_audio"
+  | "share_audio_send"
+  | "share_audio_recv"
   | "no_limitation"
   | "top_layer";
 
 export interface CheckResult {
   id: CheckId;
+  /**
+   * Whose share the verdict is on, for the checks there is one of per remote
+   * member sharing (`share_audio_recv`, `top_layer`).
+   */
+  participant?: string;
   /** `na` where there is nothing to judge: no share, a microphone muted on purpose. */
   status: "pass" | "fail" | "na";
   detail: string;
@@ -57,9 +63,33 @@ export function evaluateChecks(
   return [
     micCheck(tracks, context),
     shareResolutionCheck(tracks, context),
-    shareAudioCheck(tracks, context),
+    shareAudioSendCheck(tracks, context),
+    ...shareAudioRecvChecks(tracks, context),
     limitationCheck(tracks),
-    topLayerCheck(tracks),
+    ...topLayerChecks(tracks),
+  ];
+}
+
+/**
+ * What a check is filed under in the log: its id, and the member for the
+ * checks there is one of per member.
+ */
+export function checkKey(check: CheckResult): string {
+  return check.participant === undefined
+    ? check.id
+    : `${check.id}:${check.participant}`;
+}
+
+/** The remote members whose screen share is being received, in track order. */
+function remoteSharers(tracks: readonly TrackRecord[]): string[] {
+  return [
+    ...new Set(
+      tracks
+        .filter(
+          (t) => t.dir === "recv" && t.source === "screen_share" && !t.muted,
+        )
+        .map((t) => t.participant),
+    ),
   ];
 }
 
@@ -132,34 +162,78 @@ function expectedFromCapture(
   return { width: width / scale, height: height / scale };
 }
 
-function shareAudioCheck(
+/** What is wrong with a share's audio track, if anything. */
+function shareAudioProblem(
+  track: TrackRecord,
+  context: CheckContext,
+): string | undefined {
+  const quiet = quietFor(track, context);
+  if (track.muted) return "muted";
+  if (track.bitrate === 0) return "no bytes";
+  if (quiet === undefined) return "no sound yet";
+  if (quiet > SHARE_SOUND_WINDOW_MS)
+    return `silent for ${Math.round(quiet / 1000)} s`;
+  return undefined;
+}
+
+function shareAudioDetail(track: TrackRecord): string {
+  return `${kbps(track.bitrate)}, level ${(track.audioLevel ?? 0).toFixed(2)}`;
+}
+
+/** The audio of our own screen share, whatever the others are sharing. */
+function shareAudioSendCheck(
   tracks: readonly TrackRecord[],
   context: CheckContext,
 ): CheckResult {
-  const id = "share_audio";
-  const audio = tracks.filter((t) => t.source === "screen_share_audio");
-  if (audio.length === 0)
+  const id = "share_audio_send";
+  const audio = tracks.find(
+    (t) => t.dir === "send" && t.source === "screen_share_audio",
+  );
+  if (audio === undefined)
     return context.shareAudioExpected &&
       tracks.some((t) => t.dir === "send" && t.source === "screen_share")
       ? { id, status: "fail", detail: "no screen share audio track published" }
-      : { id, status: "na", detail: "no screen share audio" };
-  const problems: string[] = [];
-  for (const track of audio) {
-    const quiet = quietFor(track, context);
-    const whose = track.dir === "send" ? "ours" : track.participant;
-    if (track.muted) problems.push(`${whose}: muted`);
-    else if (track.bitrate === 0) problems.push(`${whose}: no bytes`);
-    else if (quiet === undefined) problems.push(`${whose}: no sound yet`);
-    else if (quiet > SHARE_SOUND_WINDOW_MS)
-      problems.push(`${whose}: silent for ${Math.round(quiet / 1000)} s`);
+      : { id, status: "na", detail: "not sharing audio" };
+  const problem = shareAudioProblem(audio, context);
+  return problem === undefined
+    ? { id, status: "pass", detail: shareAudioDetail(audio) }
+    : { id, status: "fail", detail: problem };
+}
+
+/**
+ * The audio received with a remote member's screen share: one verdict per
+ * member who is sharing a screen and publishes audio with it. A member who is
+ * not sharing has nothing to be heard, so there is none for them.
+ */
+function shareAudioRecvChecks(
+  tracks: readonly TrackRecord[],
+  context: CheckContext,
+): CheckResult[] {
+  const id = "share_audio_recv";
+  const results: CheckResult[] = [];
+  for (const participant of remoteSharers(tracks)) {
+    const audio = tracks.filter(
+      (t) =>
+        t.dir === "recv" &&
+        t.source === "screen_share_audio" &&
+        t.participant === participant,
+    );
+    if (audio.length === 0) continue;
+    const problems = audio
+      .map((t) => shareAudioProblem(t, context))
+      .filter((p) => p !== undefined);
+    results.push(
+      problems.length > 0
+        ? { id, participant, status: "fail", detail: problems.join("; ") }
+        : {
+            id,
+            participant,
+            status: "pass",
+            detail: audio.map(shareAudioDetail).join("; "),
+          },
+    );
   }
-  if (problems.length > 0)
-    return { id, status: "fail", detail: problems.join("; ") };
-  return {
-    id,
-    status: "pass",
-    detail: audio.map((t) => `${t.dir} ${kbps(t.bitrate)}`).join(", "),
-  };
+  return results;
 }
 
 function limitationCheck(tracks: readonly TrackRecord[]): CheckResult {
@@ -179,28 +253,36 @@ function limitationCheck(tracks: readonly TrackRecord[]): CheckResult {
   };
 }
 
-function topLayerCheck(tracks: readonly TrackRecord[]): CheckResult {
+/**
+ * Whether a remote member's screen share arrives at the largest size on
+ * offer: one verdict per member sharing, none where nobody is.
+ */
+function topLayerChecks(tracks: readonly TrackRecord[]): CheckResult[] {
   const id = "top_layer";
-  const shares = tracks.filter(
-    (t) => t.dir === "recv" && t.source === "screen_share" && !t.muted,
-  );
-  if (shares.length === 0)
-    return { id, status: "na", detail: "no screen share received" };
-  const problems: string[] = [];
-  const fine: string[] = [];
-  for (const share of shares) {
-    const top = topPublishedLayer(share);
-    if (share.height === undefined || share.width === undefined)
-      problems.push(`${share.participant}: no frames`);
-    else if (top !== undefined && share.height < top.height * 0.9)
-      problems.push(
-        `${share.participant}: ${share.width}x${share.height} of ${top.width}x${top.height}`,
-      );
-    else fine.push(`${share.width}x${share.height}`);
-  }
-  return problems.length > 0
-    ? { id, status: "fail", detail: problems.join("; ") }
-    : { id, status: "pass", detail: fine.join(", ") };
+  return remoteSharers(tracks).map((participant) => {
+    const problems: string[] = [];
+    const fine: string[] = [];
+    for (const share of tracks) {
+      if (
+        share.dir !== "recv" ||
+        share.source !== "screen_share" ||
+        share.muted ||
+        share.participant !== participant
+      )
+        continue;
+      const top = topPublishedLayer(share);
+      if (share.height === undefined || share.width === undefined)
+        problems.push("no frames");
+      else if (top !== undefined && share.height < top.height * 0.9)
+        problems.push(
+          `${share.width}x${share.height} of ${top.width}x${top.height}`,
+        );
+      else fine.push(`${share.width}x${share.height}`);
+    }
+    return problems.length > 0
+      ? { id, participant, status: "fail", detail: problems.join("; ") }
+      : { id, participant, status: "pass", detail: fine.join(", ") };
+  });
 }
 
 /** The largest size the publisher offers. */

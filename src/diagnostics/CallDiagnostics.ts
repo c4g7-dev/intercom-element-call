@@ -21,7 +21,12 @@ import {
 } from "rxjs";
 
 import { type Behavior } from "../state/Behavior";
-import { type CheckResult, carriesSound, evaluateChecks } from "./checks";
+import {
+  type CheckResult,
+  carriesSound,
+  checkKey,
+  evaluateChecks,
+} from "./checks";
 import { describeError, diag } from "./diag";
 import {
   diagSources,
@@ -242,7 +247,10 @@ export function recordCallDiagnostics(
       tracks: records.length,
       ...(shareNow && { share: shareNow }),
       checks: Object.fromEntries(
-        checks.map(({ id, status, detail }) => [id, { status, detail }]),
+        checks.map((check) => [
+          checkKey(check),
+          { status: check.status, detail: check.detail },
+        ]),
       ),
     });
     sample$.next({

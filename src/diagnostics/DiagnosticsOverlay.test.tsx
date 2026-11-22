@@ -114,6 +114,15 @@ describe("DiagnosticsOverlay", () => {
     expect(
       screen.getByTestId("diagnostics_check_no_limitation"),
     ).toHaveTextContent("screen_share: cpu");
+    // Our own share's audio has a line of its own; nobody else is sharing,
+    // so there is none about what is received
+    expect(
+      screen.getByTestId("diagnostics_check_share_audio_send"),
+    ).toHaveTextContent("My share audio sendingnot sharing audio");
+    expect(
+      screen.queryByTestId("diagnostics_check_share_audio_recv"),
+    ).toBeNull();
+    expect(screen.queryByTestId("diagnostics_check_top_layer")).toBeNull();
     const row = screen.getByText(/screen_share$/).closest("tr");
     expect(row).toHaveTextContent("1280x720");
     expect(row).toHaveTextContent("SW");

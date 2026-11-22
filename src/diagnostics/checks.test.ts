@@ -10,7 +10,9 @@ import { describe, expect, it } from "vitest";
 import {
   type CheckContext,
   type CheckId,
+  type CheckResult,
   carriesSound,
+  checkKey,
   evaluateChecks,
   MIC_SOUND_WINDOW_MS,
   topPublishedLayer,
@@ -20,12 +22,12 @@ import { type TrackRecord } from "./trackStats";
 describe("evaluateChecks", () => {
   it("has nothing to judge in a call with no media", () => {
     const results = evaluateChecks([], { ...context, micWanted: false });
-    expect(results.map((r) => r.status)).toEqual([
-      "na",
-      "na",
-      "na",
-      "na",
-      "na",
+    // Nothing per remote member either: nobody is sharing
+    expect(results.map((r) => [r.id, r.status])).toEqual([
+      ["mic_audio", "na"],
+      ["share_resolution", "na"],
+      ["share_audio_send", "na"],
+      ["no_limitation", "na"],
     ]);
   });
 
@@ -111,36 +113,137 @@ describe("evaluateChecks", () => {
     });
   });
 
-  describe("share audio flowing", () => {
-    it("passes while the share's audio carries sound, sent or received", () => {
-      const tracks = [shareAudio(), shareAudio({ dir: "recv", sid: "theirs" })];
+  describe("my share audio sending", () => {
+    it("passes while our share's audio carries sound, with its level and bitrate", () => {
       expect(
-        check("share_audio", tracks, {
-          lastSoundAt: { audio: NOW - 1000, theirs: NOW },
-        }).status,
-      ).toBe("pass");
+        check("share_audio_send", [share(), shareAudio({ audioLevel: 0.15 })], {
+          lastSoundAt: { audio: NOW - 1000 },
+        }),
+      ).toEqual({
+        id: "share_audio_send",
+        status: "pass",
+        detail: "128 kbps, level 0.15",
+      });
+    });
+
+    it("is not failed by a remote member who shares nothing", () => {
+      // What was seen in a call: we share with sound, the other member has
+      // an audio track for a share that is not on, and silent
+      const tracks = [
+        share(),
+        shareAudio({ audioLevel: 0.15, bitrate: 200_000 }),
+        shareAudio({ dir: "recv", participant: "@other:x:D", sid: "theirs" }),
+      ];
+      const results = evaluateChecks(tracks, {
+        ...context,
+        micWanted: false,
+        shareAudioExpected: true,
+        lastSoundAt: { audio: NOW },
+      });
+      expect(results.find((r) => r.id === "share_audio_send")).toMatchObject({
+        status: "pass",
+        detail: "200 kbps, level 0.15",
+      });
+      expect(results.some((r) => r.id === "share_audio_recv")).toBe(false);
+      expect(results.some((r) => r.id === "top_layer")).toBe(false);
+      expect(results.some((r) => r.status === "fail")).toBe(false);
     });
 
     it("fails for a share's audio that stays silent", () => {
-      expect(check("share_audio", [shareAudio()])).toMatchObject({
+      expect(check("share_audio_send", [shareAudio()])).toMatchObject({
         status: "fail",
-        detail: "ours: no sound yet",
+        detail: "no sound yet",
       });
       expect(
-        check("share_audio", [shareAudio()], {
+        check("share_audio_send", [shareAudio()], {
           lastSoundAt: { audio: NOW - 60_000 },
         }).detail,
-      ).toBe("ours: silent for 60 s");
+      ).toBe("silent for 60 s");
+      expect(
+        check("share_audio_send", [shareAudio({ muted: true })]).detail,
+      ).toBe("muted");
+      expect(
+        check("share_audio_send", [shareAudio({ bitrate: 0 })]).detail,
+      ).toBe("no bytes");
     });
 
     it("fails where a share asked for audio and published none", () => {
       expect(
-        check("share_audio", [share()], { shareAudioExpected: true }),
+        check("share_audio_send", [share()], { shareAudioExpected: true }),
       ).toMatchObject({
         status: "fail",
         detail: "no screen share audio track published",
       });
-      expect(check("share_audio", [share()]).status).toBe("na");
+      expect(check("share_audio_send", [share()]).status).toBe("na");
+    });
+
+    it("is not judged by what is received", () => {
+      const tracks = [
+        share({ dir: "recv", participant: "@a:x:D", sid: "v" }),
+        shareAudio({ dir: "recv", participant: "@a:x:D", sid: "theirs" }),
+      ];
+      expect(check("share_audio_send", tracks).status).toBe("na");
+    });
+  });
+
+  describe("share audio received", () => {
+    const theirShare = (participant: string): TrackRecord[] => [
+      share({ dir: "recv", participant, sid: `v-${participant}` }),
+      shareAudio({ dir: "recv", participant, sid: `a-${participant}` }),
+    ];
+
+    it("has a verdict per remote member sharing with audio", () => {
+      const results = evaluateChecks(
+        [...theirShare("@a:x:D"), ...theirShare("@b:x:D")],
+        { ...context, lastSoundAt: { "a-@a:x:D": NOW - 1000 } },
+      ).filter((r) => r.id === "share_audio_recv");
+      expect(results).toEqual([
+        {
+          id: "share_audio_recv",
+          participant: "@a:x:D",
+          status: "pass",
+          detail: "128 kbps, level 0.20",
+        },
+        {
+          id: "share_audio_recv",
+          participant: "@b:x:D",
+          status: "fail",
+          detail: "no sound yet",
+        },
+      ]);
+      expect(results.map(checkKey)).toEqual([
+        "share_audio_recv:@a:x:D",
+        "share_audio_recv:@b:x:D",
+      ]);
+    });
+
+    it("has none for a member whose share is off, muted or without audio", () => {
+      const none = (tracks: TrackRecord[]): boolean =>
+        !evaluateChecks(tracks, context).some(
+          (r) => r.id === "share_audio_recv",
+        );
+      // An audio track left without a share
+      expect(none([shareAudio({ dir: "recv", participant: "@a:x:D" })])).toBe(
+        true,
+      );
+      // A share that is paused
+      expect(
+        none([
+          share({ dir: "recv", participant: "@a:x:D", muted: true }),
+          shareAudio({ dir: "recv", participant: "@a:x:D" }),
+        ]),
+      ).toBe(true);
+      // A share without sound
+      expect(none([share({ dir: "recv", participant: "@a:x:D" })])).toBe(true);
+      // Another member's share says nothing of this one's audio
+      expect(
+        none([
+          share({ dir: "recv", participant: "@b:x:D" }),
+          shareAudio({ dir: "recv", participant: "@a:x:D" }),
+        ]),
+      ).toBe(true);
+      // Our own share is not a remote one
+      expect(none([share(), shareAudio()])).toBe(true);
     });
   });
 
@@ -190,10 +293,41 @@ describe("evaluateChecks", () => {
             published,
           }),
         ]),
-      ).toMatchObject({
+      ).toEqual({
+        id: "top_layer",
+        participant: "@a:x:D",
         status: "fail",
-        detail: "@a:x:D: 640x360 of 2560x1440",
+        detail: "640x360 of 2560x1440",
       });
+    });
+
+    it("has a verdict per remote member sharing, none for the others", () => {
+      const results = evaluateChecks(
+        [
+          share({ published }),
+          share({ dir: "recv", participant: "@a:x:D", sid: "a", published }),
+          share({
+            dir: "recv",
+            participant: "@b:x:D",
+            sid: "b",
+            width: undefined,
+            published,
+          }),
+          share({
+            dir: "recv",
+            participant: "@c:x:D",
+            sid: "c",
+            muted: true,
+            published,
+          }),
+          share({ dir: "recv", participant: "@d:x:D", source: "camera" }),
+        ],
+        context,
+      ).filter((r) => r.id === "top_layer");
+      expect(results.map((r) => [r.participant, r.status, r.detail])).toEqual([
+        ["@a:x:D", "pass", "2560x1440"],
+        ["@b:x:D", "fail", "no frames"],
+      ]);
     });
 
     it("does not judge cameras, which are sized to their tiles", () => {
@@ -206,8 +340,8 @@ describe("evaluateChecks", () => {
             height: 180,
             published,
           }),
-        ]).status,
-      ).toBe("na");
+        ]),
+      ).toBeUndefined();
     });
   });
 });
@@ -248,12 +382,11 @@ function check(
   id: CheckId,
   tracks: TrackRecord[],
   more: Partial<CheckContext> = {},
-): { id: CheckId; status: string; detail: string } {
-  const result = evaluateChecks(tracks, { ...context, ...more }).find(
+): CheckResult {
+  // The per-member checks are not there where no member is sharing
+  return evaluateChecks(tracks, { ...context, ...more }).find(
     (r) => r.id === id,
-  );
-  if (result === undefined) throw new Error(`No ${id} check`);
-  return result;
+  ) as CheckResult;
 }
 
 function mic(more: Partial<TrackRecord> = {}): TrackRecord {

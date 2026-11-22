@@ -101,9 +101,10 @@
   "diagnostics": {
     "check_mic_audio": "Mic publishing with audio",
     "check_no_limitation": "No quality limitation",
-    "check_share_audio": "Share audio flowing",
+    "check_share_audio_recv": "Share audio received from {{name}}",
+    "check_share_audio_send": "My share audio sending",
     "check_share_resolution": "Screen share at expected resolution",
-    "check_top_layer": "Receiving top layer",
+    "check_top_layer": "Receiving top layer from {{name}}",
     "snapshot": "Snapshot",
     "snapshot_description": "Save the frame shown right now as a PNG, for diagnostics",
     "test_pattern": "Sharpness test pattern",

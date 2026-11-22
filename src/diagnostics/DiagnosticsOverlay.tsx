@@ -17,7 +17,7 @@ import {
   useSetting,
 } from "../settings/settings";
 import { type DiagSample, diagSample$ } from "./CallDiagnostics";
-import { type CheckId, type CheckResult } from "./checks";
+import { type CheckResult, checkKey } from "./checks";
 import { diagBuffer, type DiagRecord } from "./diag";
 import { openTestPattern } from "./testPattern";
 import { type TrackRecord } from "./trackStats";
@@ -55,12 +55,23 @@ export const DiagnosticsOverlay: FC = () => {
 const DiagnosticsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
   const { t } = useTranslation();
   const sample = useBehavior(diagSample$);
-  const checkLabels: Record<CheckId, string> = {
-    mic_audio: t("diagnostics.check_mic_audio"),
-    share_resolution: t("diagnostics.check_share_resolution"),
-    share_audio: t("diagnostics.check_share_audio"),
-    no_limitation: t("diagnostics.check_no_limitation"),
-    top_layer: t("diagnostics.check_top_layer"),
+  const checkLabel = (check: CheckResult): string => {
+    // The member as others see them in the log: the user id, without the device
+    const name = check.participant?.replace(/^(@[^:]+:[^:]+):.*$/, "$1") ?? "";
+    switch (check.id) {
+      case "mic_audio":
+        return t("diagnostics.check_mic_audio");
+      case "share_resolution":
+        return t("diagnostics.check_share_resolution");
+      case "share_audio_send":
+        return t("diagnostics.check_share_audio_send");
+      case "share_audio_recv":
+        return t("diagnostics.check_share_audio_recv", { name });
+      case "no_limitation":
+        return t("diagnostics.check_no_limitation");
+      case "top_layer":
+        return t("diagnostics.check_top_layer", { name });
+    }
   };
   return (
     <section
@@ -85,9 +96,9 @@ const DiagnosticsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
           <ul className={styles.checks}>
             {sample.checks.map((check) => (
               <Check
-                key={check.id}
+                key={checkKey(check)}
                 check={check}
-                label={checkLabels[check.id]}
+                label={checkLabel(check)}
               />
             ))}
           </ul>
