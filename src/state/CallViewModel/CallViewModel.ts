@@ -88,6 +88,7 @@ import {
   screenShareLimitsForBudget,
   screenShareRequest,
 } from "../screenShareOptions";
+import { prepareSinkDevice, sinkOfChoice } from "../shareAudioSink";
 import { type MuteStates } from "../MuteStates";
 import {
   recordCallDiagnostics,
@@ -1549,10 +1550,14 @@ export function createCallViewModel$(
   let screenShareSettings: VideoCaptureSettings | undefined;
   let screenShareAudioAsked = false;
   let screenShareBudget: ShareDiagnostics["budget"];
-  const startingScreenShare = (): PublishRequest => {
+  const startingScreenShare = (sinkDeviceId?: string): PublishRequest => {
     // The developer settings win; otherwise what the share menu says now
     const request = {
-      ...screenShareRequest(),
+      ...screenShareRequest({
+        ...screenShareChoices(),
+        // The device the host made of the chosen sink, in the sink's place
+        ...(sinkDeviceId !== undefined && { audio: sinkDeviceId }),
+      }),
       ...(capture.screenShare && { capture: capture.screenShare }),
     };
     screenShareSettings = request.capture;
@@ -1568,7 +1573,11 @@ export function createCallViewModel$(
       // Which kind of source, never which device: its id says nothing useful
       audio: ["none", "system"].includes(choices.audio)
         ? choices.audio
-        : "device",
+        : sinkOfChoice(choices.audio) !== undefined
+          ? sinkDeviceId !== undefined
+            ? "sink"
+            : "sink (unavailable)"
+          : "device",
       developerOverride: capture.screenShare !== undefined,
       capture: request.capture,
     });
@@ -1649,6 +1658,38 @@ export function createCallViewModel$(
           logger.error("Failed to change the screen share's encoding", e);
         });
       });
+  // Where the share's audio is what plays into an output, the host makes a
+  // capture device of that output for as long as the share is on
+  let shareSinkPrepared = false;
+  const prepareShareSink = async (): Promise<string | undefined> => {
+    const sink = sinkOfChoice(screenShareChoices().audio);
+    if (sink === undefined) return undefined;
+    try {
+      if (hostBridge.shareAudio === undefined)
+        throw new Error("The host cannot share an output's audio");
+      shareSinkPrepared = true;
+      const deviceId = await prepareSinkDevice(hostBridge.shareAudio, sink);
+      diag("share_audio_sink", { sink, ok: true });
+      return deviceId;
+    } catch (e) {
+      // The picture is worth sharing without the sound
+      diag("share_audio_sink", { sink, ok: false, error: describeError(e) });
+      logger.warn("Could not take the share's audio from the output", e);
+      releaseShareSink();
+      return undefined;
+    }
+  };
+  const releaseShareSink = (): void => {
+    if (!shareSinkPrepared) return;
+    shareSinkPrepared = false;
+    diag("share_audio_sink_release");
+    void hostBridge.shareAudio?.releaseShareSource();
+  };
+  sharingScreen$.pipe(pairwise(), scope.bind()).subscribe(([was, is]) => {
+    if (was && !is) releaseShareSink();
+  });
+  scope.onEnd(releaseShareSink);
+
   /**
    * Callback to toggle screen sharing. If null, screen sharing is not possible:
    * the platform cannot capture a screen, or the host hides the button.
@@ -1660,14 +1701,19 @@ export function createCallViewModel$(
           const track = screenShare$.value;
           if (track !== undefined) diag("screen_share_stop", { by: "user" });
           (track === undefined
-            ? rtcParticipation.publish(startingScreenShare()).then((started) =>
-                diag("screen_share_published", {
-                  sid: started.id,
-                  capture: "dimensions" in started && started.dimensions(),
-                }),
-              )
+            ? prepareShareSink()
+                .then(async (sinkDeviceId) =>
+                  rtcParticipation.publish(startingScreenShare(sinkDeviceId)),
+                )
+                .then((started) =>
+                  diag("screen_share_published", {
+                    sid: started.id,
+                    capture: "dimensions" in started && started.dimensions(),
+                  }),
+                )
             : rtcParticipation.unpublish("screenShare")
           ).catch((e: unknown) => {
+            if (track === undefined) releaseShareSink();
             diag("screen_share_error", {
               phase: track === undefined ? "start" : "stop",
               cancelled: isPermissionDenied(e),

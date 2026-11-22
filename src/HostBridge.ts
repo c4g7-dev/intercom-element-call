@@ -122,6 +122,97 @@ export interface HostBridge {
    * media itself using its own client.
    */
   downloadMedia?(mxcUri: string): Promise<Blob>;
+  /**
+   * Screen share audio from what plays into an output (a PipeWire/PulseAudio
+   * sink), on hosts that can make a capture device of one: the InterCom
+   * desktop app on Linux. Absent where there is no host to ask; a host that
+   * does not know the request answers `listSinks` with `supported: false`.
+   */
+  shareAudio?: ShareAudioHost;
+}
+
+/** An output whose sound could be shared. */
+export interface ShareSink {
+  name: string;
+  description: string;
+  /** The applications playing into it right now. */
+  apps: string[];
+  /** Whether the call itself plays into it: sharing it sends the call back. */
+  ownPlayback: boolean;
+}
+
+export interface ShareAudioHost {
+  listSinks(): Promise<{ supported: boolean; sinks: ShareSink[] }>;
+  /**
+   * Makes a capture device of what plays into a sink.
+   * @returns what the device is called in the browser's device list
+   */
+  prepareShareSource(sinkName: string): Promise<{ description: string }>;
+  /** Lets go of the device made for the share. Never rejects. */
+  releaseShareSource(): Promise<void>;
+}
+
+/** The widget action of the share audio requests, a contract with the host. */
+export const SHARE_AUDIO_ACTION = "io.intercom.share_audio";
+
+function toShareSinks(value: unknown): ShareSink[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(
+      (sink): sink is Record<string, unknown> =>
+        typeof sink === "object" &&
+        sink !== null &&
+        typeof (sink as ShareSink).name === "string",
+    )
+    .map((sink) => ({
+      name: sink.name as string,
+      description:
+        typeof sink.description === "string" && sink.description
+          ? sink.description
+          : (sink.name as string),
+      apps: Array.isArray(sink.apps)
+        ? sink.apps.filter((app): app is string => typeof app === "string")
+        : [],
+      ownPlayback: sink.ownPlayback === true,
+    }));
+}
+
+/** Share audio over the widget API, for a host that answers the action. */
+export function createWidgetShareAudio(
+  send: (data: IWidgetApiRequestData) => Promise<unknown>,
+): ShareAudioHost {
+  return {
+    listSinks: async () => {
+      try {
+        const reply = (await send({ op: "list" })) as {
+          supported?: unknown;
+          sinks?: unknown;
+        } | null;
+        return {
+          supported: reply?.supported === true,
+          sinks: toShareSinks(reply?.sinks),
+        };
+      } catch {
+        // A host that does not know the action says so with an error
+        return { supported: false, sinks: [] };
+      }
+    },
+    prepareShareSource: async (sinkName) => {
+      const reply = (await send({ op: "prepare", sink: sinkName })) as {
+        description?: unknown;
+      } | null;
+      if (typeof reply?.description !== "string" || !reply.description)
+        throw new Error("The host did not name the share's audio device");
+      return { description: reply.description };
+    },
+    releaseShareSource: async () => {
+      try {
+        await send({ op: "release" });
+      } catch {
+        // Nothing to be done about it from here
+      }
+    },
+  };
 }
 
 /**
@@ -221,6 +312,9 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
         )
       );
     },
+    shareAudio: createWidgetShareAudio(async (data) =>
+      widget.api.transport.send(SHARE_AUDIO_ACTION, data),
+    ),
     downloadMedia: async (mxcUri) => {
       const { file } = await widget.api.downloadFile(mxcUri);
       if (file instanceof Blob) return file;

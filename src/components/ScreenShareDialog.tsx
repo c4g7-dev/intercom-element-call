@@ -5,7 +5,16 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type ChangeEvent, type FC, type ReactNode, useId } from "react";
+import {
+  type ChangeEvent,
+  type FC,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@vector-im/compound-web";
 
@@ -29,6 +38,15 @@ import {
   MAX_CUSTOM_BITRATE_MBPS,
 } from "../state/screenShareOptions";
 import { Config } from "../config/Config";
+import { type ShareSink, useHostBridge } from "../HostBridge";
+import {
+  prepareSinkDevice,
+  SHARE_DEVICE_LABEL_PREFIX,
+  sinkChoice,
+  sinkLabel,
+  sinkOfChoice,
+} from "../state/shareAudioSink";
+import { describeError, diag } from "../diagnostics/diag";
 import styles from "./ScreenShareDialog.module.css";
 
 interface Props {
@@ -41,14 +59,20 @@ interface Props {
 const Field: FC<{
   label: string;
   hint?: string;
+  /** Whether the hint is something to act on rather than an explanation. */
+  warning?: boolean;
   children: (id: string) => ReactNode;
-}> = ({ label, hint, children }) => {
+}> = ({ label, hint, warning, children }) => {
   const id = useId();
   return (
     <div className={styles.field}>
       <label htmlFor={id}>{label}</label>
       {children(id)}
-      {hint && <p className={styles.hint}>{hint}</p>}
+      {hint && (
+        <p className={styles.hint} data-warning={warning === true}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 };
@@ -71,6 +95,98 @@ export const ScreenShareDialog: FC<Props> = ({ open, onDismiss, onShare }) => {
     screenShareCustomFramerate,
   );
   const audioInputs = useBehavior(useMediaDevices().audioInput.available$);
+  const shareAudio = useHostBridge().shareAudio;
+
+  // The outputs whose sound the host can make a share's audio of, with what
+  // is playing into each: asked again every few seconds, as that changes
+  const [sinks, setSinks] = useState<ShareSink[] | null>(null);
+  useEffect(() => {
+    if (!open || shareAudio === undefined) return;
+    let over = false;
+    let reported = false;
+    const refresh = (): void => {
+      void shareAudio.listSinks().then(({ supported, sinks }) => {
+        if (over) return;
+        setSinks(supported ? sinks : null);
+        if (!reported) {
+          reported = true;
+          diag("share_audio_sinks", { supported, count: sinks.length });
+        }
+      });
+    };
+    refresh();
+    const timer = setInterval(refresh, 4000);
+    return (): void => {
+      over = true;
+      clearInterval(timer);
+    };
+  }, [open, shareAudio]);
+
+  // A chosen output is made into a device right away, so that the share
+  // starts without a wait and a failure shows here rather than as silence
+  const sink = sinkOfChoice(audio);
+  const sinksSupported = sinks !== null;
+  const [sinkState, setSinkState] = useState<"preparing" | "ready" | "failed">(
+    "preparing",
+  );
+  const preparedInDialog = useRef(false);
+  useEffect(() => {
+    if (!open || sink === undefined || shareAudio === undefined) return;
+    if (!sinksSupported) return;
+    let over = false;
+    setSinkState("preparing");
+    preparedInDialog.current = true;
+    prepareSinkDevice(shareAudio, sink).then(
+      () => {
+        diag("share_audio_choice", { sink, ok: true });
+        if (!over) setSinkState("ready");
+      },
+      (e: unknown) => {
+        diag("share_audio_choice", {
+          sink,
+          ok: false,
+          error: describeError(e),
+        });
+        if (!over) setSinkState("failed");
+      },
+    );
+    return (): void => {
+      over = true;
+    };
+  }, [open, sink, shareAudio, sinksSupported]);
+  // Closed without sharing: nothing is listening to the device
+  const dismiss = useCallback(() => {
+    if (preparedInDialog.current) {
+      preparedInDialog.current = false;
+      void shareAudio?.releaseShareSource();
+    }
+    onDismiss();
+  }, [onDismiss, shareAudio]);
+  const chooseAudio = (choice: string): void => {
+    // Away from an output: its device is of no more use
+    if (preparedInDialog.current && sinkOfChoice(choice) === undefined) {
+      preparedInDialog.current = false;
+      void shareAudio?.releaseShareSource();
+    }
+    diag("share_audio_choice", {
+      kind:
+        sinkOfChoice(choice) !== undefined
+          ? "sink"
+          : ["none", "system"].includes(choice)
+            ? choice
+            : "device",
+    });
+    setAudio(choice);
+  };
+  const chosenSink = sinks?.find((s) => s.name === sink);
+  const audioHint =
+    sink === undefined || sinks === null
+      ? t("screen_share_options.audio_hint")
+      : chosenSink?.ownPlayback
+        ? t("screen_share_options.audio_sink_echo_warning")
+        : sinkState === "failed"
+          ? t("screen_share_options.audio_sink_failed")
+          : t("screen_share_options.audio_sink_hint");
   const budget = Config.get().media_quality?.server_egress_budget_mbps ?? 0;
 
   const presetHints: Record<ScreenSharePreset, string> = {
@@ -86,13 +202,34 @@ export const ScreenShareDialog: FC<Props> = ({ open, onDismiss, onShare }) => {
     };
   // A device that has gone since it was picked is still shown, as what it was
   const audioKnown =
-    audio === "none" || audio === "system" || audioInputs.has(audio);
+    audio === "none" ||
+    audio === "system" ||
+    (sink !== undefined ? chosenSink !== undefined : audioInputs.has(audio));
+
+  const inputOptions = [...audioInputs]
+    // The devices the host makes of outputs are offered as the outputs
+    .filter(
+      ([, label]) =>
+        !(
+          label.type === "name" &&
+          label.name.startsWith(SHARE_DEVICE_LABEL_PREFIX)
+        ),
+    )
+    .map(([deviceId, label]) => (
+      <option key={deviceId} value={deviceId}>
+        {label.type === "name"
+          ? label.name
+          : t("settings.devices.microphone_numbered", {
+              n: label.number,
+            })}
+      </option>
+    ));
 
   return (
     <Modal
       title={t("screen_share_options.title")}
       open={open}
-      onDismiss={onDismiss}
+      onDismiss={dismiss}
       className={styles.dialog}
     >
       <div className={styles.content} data-testid="screenshare_options">
@@ -142,13 +279,18 @@ export const ScreenShareDialog: FC<Props> = ({ open, onDismiss, onShare }) => {
         </Field>
         <Field
           label={t("screen_share_options.audio")}
-          hint={t("screen_share_options.audio_hint")}
+          hint={audioHint}
+          warning={
+            sink !== undefined &&
+            sinks !== null &&
+            (chosenSink?.ownPlayback === true || sinkState === "failed")
+          }
         >
           {(id) => (
             <select
               id={id}
               value={audio}
-              onChange={(e) => setAudio(e.target.value)}
+              onChange={(e) => chooseAudio(e.target.value)}
               data-testid="screenshare_audio_source"
             >
               <option value="none">
@@ -157,15 +299,26 @@ export const ScreenShareDialog: FC<Props> = ({ open, onDismiss, onShare }) => {
               <option value="system">
                 {t("screen_share_options.audio_system")}
               </option>
-              {[...audioInputs].map(([deviceId, label]) => (
-                <option key={deviceId} value={deviceId}>
-                  {label.type === "name"
-                    ? label.name
-                    : t("settings.devices.microphone_numbered", {
-                        n: label.number,
-                      })}
-                </option>
-              ))}
+              {sinks !== null && sinks.length > 0 && (
+                <optgroup
+                  label={t("screen_share_options.audio_sinks")}
+                  data-testid="screenshare_audio_sinks"
+                >
+                  {sinks.map((s) => (
+                    <option key={s.name} value={sinkChoice(s.name)}>
+                      {sinkLabel(s)}
+                      {s.ownPlayback
+                        ? ` (${t("screen_share_options.audio_sink_own")})`
+                        : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {inputOptions.length > 0 && (
+                <optgroup label={t("screen_share_options.audio_inputs")}>
+                  {inputOptions}
+                </optgroup>
+              )}
               {!audioKnown && (
                 <option value={audio}>
                   {t("screen_share_options.audio_unavailable")}
@@ -236,7 +389,7 @@ export const ScreenShareDialog: FC<Props> = ({ open, onDismiss, onShare }) => {
           </Field>
         </details>
         <div className={styles.actions}>
-          <Button kind="secondary" size="md" onClick={onDismiss}>
+          <Button kind="secondary" size="md" onClick={dismiss}>
             {t("action.close")}
           </Button>
           <Button

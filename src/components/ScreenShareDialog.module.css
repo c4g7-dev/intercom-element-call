@@ -55,6 +55,10 @@ Please see LICENSE in the repository root for full details.
   color: var(--cpd-color-text-secondary);
 }
 
+.hint[data-warning="true"] {
+  color: var(--cpd-color-text-critical-primary);
+}
+
 .advanced summary {
   cursor: pointer;
   font: var(--cpd-font-body-sm-medium);

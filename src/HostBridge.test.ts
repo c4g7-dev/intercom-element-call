@@ -13,6 +13,8 @@ import { type Observable } from "rxjs";
 
 import {
   createWidgetHostBridge,
+  createWidgetShareAudio,
+  SHARE_AUDIO_ACTION,
   type HostBridge,
   nullHostBridge,
 } from "./HostBridge";
@@ -302,5 +304,86 @@ describe("nullHostBridge", () => {
 
   test("does not allow joining unmuted on the intent, since nobody vouched for it", () => {
     expect(nullHostBridge.allowJoinUnmutedViaIntent).toBe(false);
+  });
+});
+
+describe("createWidgetShareAudio", () => {
+  test("lists the sinks the host knows, in a shape that can be trusted", async () => {
+    const send = vi.fn().mockResolvedValue({
+      supported: true,
+      sinks: [
+        {
+          name: "virtual-music",
+          description: "Virtual Music",
+          apps: ["Spotify", 5],
+          ownPlayback: false,
+        },
+        { name: "virtual-discord", ownPlayback: true },
+        { description: "nameless" },
+        "nonsense",
+      ],
+    });
+    await expect(createWidgetShareAudio(send).listSinks()).resolves.toEqual({
+      supported: true,
+      sinks: [
+        {
+          name: "virtual-music",
+          description: "Virtual Music",
+          apps: ["Spotify"],
+          ownPlayback: false,
+        },
+        {
+          name: "virtual-discord",
+          description: "virtual-discord",
+          apps: [],
+          ownPlayback: true,
+        },
+      ],
+    });
+    expect(send).toHaveBeenCalledWith({ op: "list" });
+  });
+
+  test("is unsupported on a host that does not know the action", async () => {
+    const send = vi
+      .fn()
+      .mockRejectedValue(new Error("Unknown or unsupported action"));
+    await expect(createWidgetShareAudio(send).listSinks()).resolves.toEqual({
+      supported: false,
+      sinks: [],
+    });
+  });
+
+  test("prepares a sink and passes a refusal on", async () => {
+    const send = vi
+      .fn()
+      .mockResolvedValueOnce({ description: "InterCom share: Virtual Music" })
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error("No such sink"));
+    const shareAudio = createWidgetShareAudio(send);
+    await expect(
+      shareAudio.prepareShareSource("virtual-music"),
+    ).resolves.toEqual({ description: "InterCom share: Virtual Music" });
+    expect(send).toHaveBeenCalledWith({ op: "prepare", sink: "virtual-music" });
+    await expect(shareAudio.prepareShareSource("x")).rejects.toThrow();
+    await expect(shareAudio.prepareShareSource("y")).rejects.toThrow(
+      "No such sink",
+    );
+  });
+
+  test("releases without ever rejecting", async () => {
+    const send = vi.fn().mockRejectedValue(new Error("gone"));
+    await expect(
+      createWidgetShareAudio(send).releaseShareSource(),
+    ).resolves.toBeUndefined();
+    expect(send).toHaveBeenCalledWith({ op: "release" });
+  });
+
+  test("goes to the host as the share audio widget action", async () => {
+    const transport = mockTransport();
+    const bridge = createWidgetHostBridge(mockWidget({ transport } as never));
+    await bridge.shareAudio!.releaseShareSource();
+    expect(transport.send).toHaveBeenCalledWith(SHARE_AUDIO_ACTION, {
+      op: "release",
+    });
   });
 });
