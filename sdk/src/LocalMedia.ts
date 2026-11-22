@@ -337,6 +337,7 @@ class CapturedTrack {
       // nothing unencrypted to report
       encrypted: true,
       stats$: (): Observable<MediaStreamStats> => of(undefined),
+      diagnostics: async () => Promise.resolve(undefined),
       attach: (element: HTMLMediaElement): void => {
         this.live();
         this.elements.add(element);

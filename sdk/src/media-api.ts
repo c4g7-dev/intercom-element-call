@@ -136,6 +136,63 @@ export type MediaStreamStats =
   | RTCOutboundRtpStreamStats
   | undefined;
 
+/**
+ * Everything a backend can say about how a track is being sent or received
+ * right now, for a diagnostics recorder. Carries numbers and names only:
+ * never media, keys or tokens.
+ */
+export interface TrackDiagnostics {
+  /** Every entry of the statistics report of the track's sender or receiver. */
+  stats: Record<string, unknown>[];
+  /** The browser's track, as it is now. */
+  track?: {
+    contentHint?: string;
+    readyState: string;
+    enabled: boolean;
+    muted: boolean;
+    label: string;
+    width?: number;
+    height?: number;
+    frameRate?: number;
+    sampleRate?: number;
+    channelCount?: number;
+  };
+  /** Local tracks: what the sender was last told to encode. */
+  sender?: {
+    degradationPreference?: string;
+    encodings: {
+      rid?: string;
+      active?: boolean;
+      maxBitrate?: number;
+      maxFramerate?: number;
+      scaleResolutionDownBy?: number;
+      scalabilityMode?: string;
+      priority?: string;
+    }[];
+    upstreamPaused: boolean;
+  };
+  /** What the publisher announced: the layers on offer and the full size. */
+  published?: {
+    simulcast: boolean;
+    width?: number;
+    height?: number;
+    layers: {
+      quality: number;
+      width: number;
+      height: number;
+      bitrate: number;
+    }[];
+  };
+  /** Remote tracks: the state of our subscription. */
+  subscription?: {
+    subscribed: boolean;
+    enabled: boolean;
+    /** The quality asked of the SFU: 0 low, 1 medium, 2 high. */
+    requestedQuality?: number;
+    streamState?: string;
+  };
+}
+
 /** One published track of a member. */
 export interface MediaTrack {
   source: MediaSource;
@@ -154,6 +211,11 @@ export interface MediaTrack {
    * otherwise. Each subscription runs its own poll, so a view shares one.
    */
   stats$(intervalMs: number): Observable<MediaStreamStats>;
+  /**
+   * One reading of all there is to know about the track's transmission.
+   * Undefined while there is no track behind the publication.
+   */
+  diagnostics(): Promise<TrackDiagnostics | undefined>;
   /**
    * Rendering. The view hands its `<video>` or `<audio>` element over; the SDK
    * sets its stream and, for video, registers the size and on-screen observers

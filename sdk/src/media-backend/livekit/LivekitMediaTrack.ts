@@ -18,6 +18,7 @@ import {
   ParticipantEvent,
   RemoteAudioTrack,
   RemoteTrack,
+  RemoteTrackPublication,
   RemoteVideoTrack,
   type ElementInfo,
   type Room as LivekitRoom,
@@ -49,6 +50,7 @@ import {
   type MediaSource,
   type MediaStreamStats,
   type MediaTrack,
+  type TrackDiagnostics,
   type VideoMediaTrack,
 } from "../../media-api";
 import { MatrixRTCError } from "../../errors";
@@ -157,6 +159,7 @@ export function createLivekitMediaTrack(
         switchMap(async () => rtpStreamStats(publication, participant.isLocal)),
         scope.bind(),
       ),
+    diagnostics: async () => trackDiagnostics(publication),
     attach: (element) => {
       if (attached.has(element)) return;
       attached.add(element);
@@ -423,6 +426,79 @@ async function rtpStreamStats(
   const type = local ? "outbound-rtp" : "inbound-rtp";
   for (const stats of report.values()) if (stats.type === type) return stats;
   return undefined;
+}
+
+async function trackDiagnostics(
+  publication: TrackPublication,
+): Promise<TrackDiagnostics | undefined> {
+  const track = publication.track;
+  if (!(track instanceof RemoteTrack || track instanceof LocalTrack))
+    return undefined;
+  const report = await track.getRTCStatsReport();
+  const mediaTrack = track.mediaStreamTrack;
+  const settings = mediaTrack.getSettings?.() ?? {};
+  const info = publication.trackInfo;
+  return {
+    stats: report
+      ? Array.from(report.values() as Iterable<Record<string, unknown>>)
+      : [],
+    track: {
+      contentHint: mediaTrack.contentHint,
+      readyState: mediaTrack.readyState,
+      enabled: mediaTrack.enabled,
+      muted: mediaTrack.muted,
+      label: mediaTrack.label,
+      width: settings.width,
+      height: settings.height,
+      frameRate: settings.frameRate,
+      sampleRate: settings.sampleRate,
+      channelCount: settings.channelCount,
+    },
+    ...(track instanceof LocalTrack && { sender: senderDiagnostics(track) }),
+    published: {
+      simulcast: publication.simulcasted ?? false,
+      width: publication.dimensions?.width,
+      height: publication.dimensions?.height,
+      layers: (info?.layers ?? []).map((layer) => ({
+        quality: layer.quality,
+        width: layer.width,
+        height: layer.height,
+        bitrate: layer.bitrate,
+      })),
+    },
+    ...(publication instanceof RemoteTrackPublication && {
+      subscription: {
+        subscribed: publication.isSubscribed,
+        enabled: publication.isEnabled,
+        requestedQuality: publication.videoQuality,
+        streamState:
+          track instanceof RemoteTrack ? track.streamState : undefined,
+      },
+    }),
+  };
+}
+
+function senderDiagnostics(track: LocalTrack): TrackDiagnostics["sender"] {
+  let params: RTCRtpSendParameters | undefined;
+  try {
+    params = track.sender?.getParameters();
+  } catch {
+    // A sender that is being torn down has nothing to say
+  }
+  return {
+    degradationPreference: params?.degradationPreference,
+    encodings: (params?.encodings ?? []).map((encoding) => ({
+      rid: encoding.rid,
+      active: encoding.active,
+      maxBitrate: encoding.maxBitrate,
+      maxFramerate: encoding.maxFramerate,
+      scaleResolutionDownBy: encoding.scaleResolutionDownBy,
+      scalabilityMode: (encoding as { scalabilityMode?: string })
+        .scalabilityMode,
+      priority: encoding.priority,
+    })),
+    upstreamPaused: track.isUpstreamPaused,
+  };
 }
 
 /**

@@ -312,6 +312,7 @@ export function mockMediaTrack(
     muted$: constant(false),
     encrypted: true,
     stats$: () => constant(undefined),
+    diagnostics: async () => Promise.resolve(undefined),
     isActive$: constant(false),
     audioLevel$: constant(0),
     attach: vi.fn(),

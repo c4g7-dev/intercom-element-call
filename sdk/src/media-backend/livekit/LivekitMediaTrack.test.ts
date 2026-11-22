@@ -192,6 +192,126 @@ describe("createLivekitMediaTrack", () => {
     expect(publication.track!.getRTCStatsReport).toHaveBeenCalledTimes(3);
   });
 
+  it("reads a remote track's diagnostics: the whole report, the track and what was published", async () => {
+    const { participant, publication, room } = fakes();
+    const mediaStreamTrack = {
+      contentHint: "",
+      readyState: "live",
+      enabled: true,
+      muted: false,
+      label: "remote video",
+      getSettings: () => ({ width: 1280, height: 720, frameRate: 30 }),
+    };
+    Object.assign(publication.track!, { _mediaStreamTrack: mediaStreamTrack });
+    publication.track!.getRTCStatsReport.mockResolvedValue(
+      new Map([
+        ["a", { type: "inbound-rtp", frameWidth: 1280 }],
+        ["b", { type: "codec", mimeType: "video/VP8" }],
+      ]),
+    );
+    Object.assign(publication, {
+      simulcasted: true,
+      dimensions: { width: 1280, height: 720 },
+      trackInfo: {
+        layers: [{ quality: 2, width: 1280, height: 720, bitrate: 1_700_000 }],
+      },
+    });
+    const track = createLivekitMediaTrack(
+      scope,
+      participant,
+      publication as unknown as TrackPublication,
+      room,
+    );
+    await expect(track.diagnostics()).resolves.toEqual({
+      stats: [
+        { type: "inbound-rtp", frameWidth: 1280 },
+        { type: "codec", mimeType: "video/VP8" },
+      ],
+      track: {
+        contentHint: "",
+        readyState: "live",
+        enabled: true,
+        muted: false,
+        label: "remote video",
+        width: 1280,
+        height: 720,
+        frameRate: 30,
+        sampleRate: undefined,
+        channelCount: undefined,
+      },
+      published: {
+        simulcast: true,
+        width: 1280,
+        height: 720,
+        layers: [{ quality: 2, width: 1280, height: 720, bitrate: 1_700_000 }],
+      },
+    });
+  });
+
+  it("reads our own track's diagnostics with what the sender was told to encode", async () => {
+    const sender = {
+      getParameters: () => ({
+        degradationPreference: "maintain-resolution",
+        encodings: [
+          { active: true, maxBitrate: 8_000_000, scaleResolutionDownBy: 2 },
+        ],
+      }),
+    };
+    const local = Object.assign(Object.create(LocalVideoTrack.prototype), {
+      _isUpstreamPaused: false,
+      _mediaStreamTrack: {
+        contentHint: "detail",
+        readyState: "live",
+        enabled: true,
+        muted: false,
+        label: "screen",
+        getSettings: () => ({}),
+      },
+      getRTCStatsReport: vi.fn().mockResolvedValue(undefined),
+      sender,
+    }) as LocalVideoTrack;
+    const { participant, publication, room } = fakes({
+      track: local as unknown as FakeTrack,
+    });
+    const track = createLivekitMediaTrack(
+      scope,
+      participant,
+      publication as unknown as TrackPublication,
+      room,
+    );
+    const diagnostics = await track.diagnostics();
+    expect(diagnostics?.stats).toEqual([]);
+    expect(diagnostics?.track?.contentHint).toBe("detail");
+    expect(diagnostics?.sender).toEqual({
+      degradationPreference: "maintain-resolution",
+      encodings: [
+        {
+          active: true,
+          maxBitrate: 8_000_000,
+          scaleResolutionDownBy: 2,
+          rid: undefined,
+          maxFramerate: undefined,
+          scalabilityMode: undefined,
+          priority: undefined,
+        },
+      ],
+      upstreamPaused: false,
+    });
+    expect(diagnostics?.subscription).toBeUndefined();
+  });
+
+  it("has no diagnostics while there is no track", async () => {
+    const { participant, publication, room } = fakes();
+    publication.track = undefined;
+    const track = createLivekitMediaTrack(
+      scope,
+      participant,
+      publication as unknown as TrackPublication,
+      room,
+    );
+    await expect(track.diagnostics()).resolves.toBeUndefined();
+  });
+
   it("gives our own track its controls", async () => {
     const { participant, publication, room } = fakes({
       kind: Track.Kind.Audio,
