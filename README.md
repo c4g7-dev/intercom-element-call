@@ -1,3 +1,10 @@
+> [!NOTE]
+> **InterCom fork** — see https://github.com/c4g7-dev/InterCom. Not affiliated with or endorsed by Element.
+>
+> The `intercom` branch changes screen sharing (native resolution, presets, shared audio with live
+> mixing), adds per-tile volume, fullscreen, pop-out, an equal grid layout, call shortcuts and
+> diagnostics, and builds the embedded package InterCom bundles. The upstream README follows.
+
 # Element Call
 
 [![Chat](https://img.shields.io/matrix/webrtc:matrix.org)](https://matrix.to/#/#webrtc:matrix.org)
