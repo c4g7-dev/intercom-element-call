@@ -73,6 +73,7 @@ import { useHostBridge } from "../HostBridge.ts";
 import { useMuteStates } from "../state/useMuteStates.ts";
 import { useLeaveToHome } from "../LeaveToHomeContext.ts";
 import { useLocalMedia } from "../useLocalMedia.ts";
+import { autoMuteInLargeCalls } from "../settings/settings";
 
 /**
  * If there already are this many participants in the call, we automatically mute
@@ -181,7 +182,10 @@ const LoadedCallView: FC<LoadedProps> = ({
   );
   // This should use `useEffectEvent` (only available in experimental versions)
   useEffect(() => {
-    if (memberships.length >= MUTE_PARTICIPANT_COUNT)
+    if (
+      autoMuteInLargeCalls.getValue() &&
+      memberships.length >= MUTE_PARTICIPANT_COUNT
+    )
       muteStates.audio.setEnabled$.value?.(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

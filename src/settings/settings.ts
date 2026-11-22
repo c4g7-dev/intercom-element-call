@@ -230,9 +230,29 @@ export const noiseSuppressionSetting = new Setting<boolean>(
   true,
 );
 
+/**
+ * Chromium's automatic gain control drives the volume of the capture device
+ * itself, which on Linux (PipeWire/PulseAudio) leaves the microphone quieter
+ * for every other application and creeps down over a call
+ * (element-hq/element-web#32469). Off by default there.
+ */
+export const isLinuxDesktop = (): boolean =>
+  typeof navigator !== "undefined" &&
+  /Linux/i.test(navigator.userAgent) &&
+  !/Android/i.test(navigator.userAgent);
+
 export const autoGainControlSetting = new Setting<boolean>(
   "auto-gain-control",
-  true,
+  !isLinuxDesktop(),
+);
+
+/**
+ * Whether to join muted when the call already has many participants
+ * (`MUTE_PARTICIPANT_COUNT`). Off by default: the mute switch is the user's.
+ */
+export const autoMuteInLargeCalls = new Setting<boolean>(
+  "auto-mute-in-large-calls",
+  false,
 );
 
 /**

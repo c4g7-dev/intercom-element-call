@@ -236,6 +236,54 @@ describe("MuteState", () => {
     expect(muteState.enabled$.value).toBe(false);
   });
 
+  // InterCom: a microphone that goes away and comes back during a call (a
+  // headset reconnecting, PipeWire re-enumerating) returns to what the user
+  // had asked for, instead of leaving them muted until they click.
+  test("restores a device that comes back under a handler when asked to", async () => {
+    const available$ = new BehaviorSubject(aCamera);
+    const muteState = new MuteState(
+      testScope,
+      aDevice(available$),
+      true,
+      constant(false),
+      true,
+    );
+    const handler = vi.fn(async (desired: boolean) => Promise.resolve(desired));
+    muteState.setHandler(handler);
+
+    available$.next(new Map());
+    await flushPromises();
+    expect(muteState.enabled$.value).toBe(false);
+    available$.next(aCamera);
+    await flushPromises();
+
+    expect(handler.mock.calls).toEqual([[false], [true]]);
+    expect(muteState.enabled$.value).toBe(true);
+  });
+
+  test("keeps a restorable device off when the user had turned it off", async () => {
+    const available$ = new BehaviorSubject(aCamera);
+    const muteState = new MuteState(
+      testScope,
+      aDevice(available$),
+      true,
+      constant(false),
+      true,
+    );
+    const handler = vi.fn(async (desired: boolean) => Promise.resolve(desired));
+    muteState.setHandler(handler);
+    muteState.setEnabled$.value?.(false);
+    await flushPromises();
+    expect(muteState.enabled$.value).toBe(false);
+
+    available$.next(new Map());
+    available$.next(aCamera);
+    await flushPromises();
+
+    expect(handler).not.toHaveBeenCalledWith(true);
+    expect(muteState.enabled$.value).toBe(false);
+  });
+
   // The lobby case, which must keep working as before: no handler is set.
   // 1. Start with no camera, with the camera set to be on by default.
   // 2. The camera shows up.

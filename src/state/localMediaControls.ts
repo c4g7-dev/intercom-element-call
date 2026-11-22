@@ -13,7 +13,7 @@ import {
   type VideoProcessor,
 } from "@element-hq/matrixrtc-sdk";
 import { type Logger } from "matrix-js-sdk/lib/logger";
-import { combineLatest } from "rxjs";
+import { combineLatest, NEVER, type Observable } from "rxjs";
 
 import { type MediaDevice } from "./MediaDevices";
 import { type Handler } from "./MuteStates";
@@ -25,10 +25,47 @@ export interface TrackSupply {
   ready?: () => Promise<unknown>;
 }
 
+/** How long to wait before each new attempt at a publication that failed. */
+export const PUBLISH_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15000];
+
+/**
+ * Whether the device itself refused: a denied permission, a missing or busy
+ * device. Trying again would only ask the same question, so the switch flips
+ * back. Anything else (typically a connection that is not up yet) is worth
+ * another attempt.
+ */
+export function isDeviceRefusal(e: unknown): boolean {
+  for (let cause: unknown = e, depth = 0; depth < 5; depth++) {
+    if (
+      typeof cause === "object" &&
+      cause !== null &&
+      "name" in cause &&
+      typeof cause.name === "string" &&
+      [
+        "NotAllowedError",
+        "NotFoundError",
+        "NotReadableError",
+        "OverconstrainedError",
+        "SecurityError",
+      ].includes(cause.name)
+    )
+      return true;
+    if (!(cause instanceof Error) || cause.cause === undefined) return false;
+    cause = cause.cause;
+  }
+  return false;
+}
+
 /**
  * The mute switch drives the track, which reports back what the device
  * allowed, so a denied permission flips the switch back. A source is muted
  * and unmuted while its track exists and published when it does not.
+ *
+ * A publication that fails for any reason other than the device refusing
+ * (the media connection not being up yet, most of the time) leaves the switch
+ * on, as the user asked, and is attempted again: after a delay and whenever
+ * `retry$` emits (the participation becoming connected). Only once every
+ * attempt has failed does the switch flip to off.
  */
 export function followMuteState(
   scope: ObservableScope,
@@ -36,17 +73,82 @@ export function followMuteState(
     setHandler: (handler: Handler) => void;
     unsetHandler: () => void;
     enabled$: Behavior<boolean>;
+    setEnabled$?: Behavior<((enabled: boolean) => void) | null>;
   },
   track$: Behavior<LocalMediaTrack | undefined>,
   supply: TrackSupply,
   source: "microphone" | "camera",
   logger: Logger,
+  retry$: Observable<unknown> = NEVER,
 ): void {
   // What the switch asks for, ahead of what it shows: the switch follows
   // only once the handler has resolved
   let desired = muteState.enabled$.value;
+  let attempts = 0;
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let publishing = false;
+  const cancelRetry = (): void => {
+    if (retryTimer !== undefined) clearTimeout(retryTimer);
+    retryTimer = undefined;
+  };
+  const giveUp = (): void => {
+    cancelRetry();
+    attempts = 0;
+    desired = false;
+    muteState.setEnabled$?.value?.(false);
+  };
+  /** Resolves with whether the switch may stay on. */
+  const publish = async (): Promise<boolean> => {
+    if (publishing) return true;
+    publishing = true;
+    cancelRetry();
+    try {
+      await supply.publish();
+      attempts = 0;
+      return true;
+    } catch (e) {
+      if (isDeviceRefusal(e)) {
+        logger.error(`Failed to publish the ${source}`, e);
+        attempts = 0;
+        return false;
+      }
+      const delay = PUBLISH_RETRY_DELAYS_MS[attempts++];
+      if (delay === undefined) {
+        logger.error(`Failed to publish the ${source}, giving up`, e);
+        attempts = 0;
+        return false;
+      }
+      logger.warn(
+        `Failed to publish the ${source}, staying unmuted and retrying in ${delay}ms`,
+        e,
+      );
+      retryTimer = setTimeout(retry, delay);
+      return true;
+    } finally {
+      publishing = false;
+    }
+  };
+  const retry = (): void => {
+    // Only a pending retry is brought forward or run
+    if (retryTimer === undefined) return;
+    cancelRetry();
+    if (!desired || track$.value !== undefined) {
+      attempts = 0;
+      return;
+    }
+    void publish().then((keep) => {
+      if (!keep && desired) giveUp();
+    });
+  };
+  retry$.pipe(scope.bind()).subscribe(() => retry());
+  scope.onEnd(cancelRetry);
+
   muteState.setHandler(async (enabled) => {
     desired = enabled;
+    if (!enabled) {
+      cancelRetry();
+      attempts = 0;
+    }
     if (enabled) await supply.ready?.();
     const track = track$.value;
     if (track !== undefined) {
@@ -54,14 +156,8 @@ export function followMuteState(
       return desired;
     }
     if (!enabled) return false;
-    try {
-      await supply.publish();
-      return true;
-    } catch (e) {
-      logger.error(`Failed to publish the ${source}`, e);
-      desired = false;
-      return false;
-    }
+    desired = await publish();
+    return desired;
   });
   scope.onEnd(() => muteState.unsetHandler());
   // A track that arrives after its switch was flipped off catches up with it

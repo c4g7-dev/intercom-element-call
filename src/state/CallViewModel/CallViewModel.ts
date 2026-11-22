@@ -581,6 +581,13 @@ export function createCallViewModel$(
       ),
     ready: source === "camera" ? cameraReady : undefined,
   });
+  // A publication that failed while the participation was still connecting
+  // is attempted again the moment it is connected
+  const publishRetry$ = rtcParticipation.state$.pipe(
+    map((state) => state.kind),
+    distinctUntilChanged(),
+    filter((kind) => kind === "connected"),
+  );
   followMuteState(
     scope,
     muteStates.audio,
@@ -588,6 +595,7 @@ export function createCallViewModel$(
     supply("microphone"),
     "microphone",
     logger,
+    publishRetry$,
   );
   followMuteState(
     scope,
@@ -596,6 +604,7 @@ export function createCallViewModel$(
     supply("camera"),
     "camera",
     logger,
+    publishRetry$,
   );
   followDevice(
     scope,

@@ -54,6 +54,11 @@ export class MuteState<Label, Selected> {
   }
 
   private devicesConnectedBefore = false;
+  /**
+   * What the user last asked for, kept across the device going away so that
+   * it can be restored when the device comes back (see `restoreOnReturn`).
+   */
+  private lastWanted: boolean | undefined = undefined;
 
   private readonly canControlDevices$ = combineLatest([
     this.device.available$,
@@ -94,9 +99,15 @@ export class MuteState<Label, Selected> {
           handlerAttached && this.devicesConnectedBefore;
         // Set the flag. A marker, that we reached this code before.
         this.devicesConnectedBefore = true;
+        // A device that comes back during a call returns to what the user had
+        // asked for before it went away where that is wanted (the
+        // microphone: a headset that reconnects must not leave the user
+        // silently muted), and stays off otherwise (the camera: one that is
+        // plugged in must not start sending video unasked).
         const initialWanted = deviceCameBackInCall
-          ? false
+          ? this.restoreOnReturn && (this.lastWanted ?? this.enabledByDefault)
           : this.enabledByDefault;
+        this.lastWanted = initialWanted;
         // With a handler attached we start off and let the sync below actually call
         // the handler, so the switch shows "on" only once the track is really there.
         // Without one (lobby) enabled = initialWanted -> no call to handler.
@@ -120,6 +131,8 @@ export class MuteState<Label, Selected> {
                   switchMap(async (handler) => handler(latestDesired)),
                 ),
               );
+              // The handler has the last word: a refusal is what is wanted now
+              if (enabled !== latestDesired) this.lastWanted = enabled;
               if (enabled === previouslyEnabled) {
                 syncing$.next(false);
               } else {
@@ -143,6 +156,7 @@ export class MuteState<Label, Selected> {
 
           const s = desired$.subscribe((desired) => {
             latestDesired = desired;
+            this.lastWanted = desired;
             if (syncing$.value === false) startSync();
           });
           if (enabled !== latestDesired) startSync();
@@ -190,6 +204,11 @@ export class MuteState<Label, Selected> {
      * @private
      */
     private readonly forceMute$: Observable<boolean>,
+    /**
+     * Whether a device that comes back during a call (under a handler)
+     * returns to the state the user last asked for, rather than to off.
+     */
+    private readonly restoreOnReturn = false,
   ) {}
 }
 
@@ -215,6 +234,7 @@ export class MuteStates {
     this.mediaDevices.audioInput,
     this.initialMuteState.audioEnabled,
     constant(false),
+    true,
   );
   public readonly video = new MuteState(
     this.scope,
