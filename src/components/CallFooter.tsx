@@ -13,6 +13,7 @@ import LogoType from "../icons/LogoType.svg?react";
 import {
   EndCallButton,
   ShareScreenButton,
+  ShareAudioButton,
   SettingsButton,
   ReactionToggleButton,
   LoudspeakerButton,
@@ -27,7 +28,7 @@ import { type LayoutSwitchViewModel } from "../state/LayoutSwitchViewModel";
 import { LayoutSwitch } from "../room/LayoutSwitch";
 import { type MediaMenuViewModel } from "./MediaMenuViewModel";
 import { MediaMenuButton } from "./MediaMenuButton";
-import { ScreenShareDialog } from "./ScreenShareDialog";
+import { ScreenShareDialog, ShareAudioDialog } from "./ScreenShareDialog";
 
 export interface AudioOutputSwitcher {
   targetOutput: string;
@@ -120,6 +121,7 @@ export const CallFooter: FC<FooterProps> = ({
   const showLogo = useBehavior(vm.showLogo$);
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [shareAudioOpen, setShareAudioOpen] = useState(false);
   const buttons: JSX.Element[] = [];
 
   if (openSettings !== undefined) {
@@ -167,6 +169,16 @@ export const CallFooter: FC<FooterProps> = ({
         data-testid="incall_screenshare"
       />,
     );
+    // While sharing, the sources of the share's audio can be changed
+    if (sharingScreen && showModals)
+      buttons.push(
+        <ShareAudioButton
+          size={buttonSize}
+          key="share_audio"
+          onClick={() => setShareAudioOpen(true)}
+          data-testid="incall_share_audio"
+        />,
+      );
   }
 
   // Reaction button contains a pretty large menu, so treat it like a modal
@@ -249,6 +261,12 @@ export const CallFooter: FC<FooterProps> = ({
       {!hideControls && <div className={styles.buttons}>{buttons}</div>}
       {!hideControls && layoutSwitchVm && (
         <LayoutSwitch vm={layoutSwitchVm} className={styles.layout} />
+      )}
+      {sharingScreen && showModals && shareAudioOpen && (
+        <ShareAudioDialog
+          open={shareAudioOpen}
+          onDismiss={() => setShareAudioOpen(false)}
+        />
       )}
       {toggleScreenSharing !== undefined && showModals && shareDialogOpen && (
         <ScreenShareDialog

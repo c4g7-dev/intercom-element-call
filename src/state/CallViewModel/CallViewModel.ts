@@ -66,6 +66,7 @@ import {
   duplicateTiles,
   playReactionsSound,
   showReactions,
+  screenShareAudioMix,
 } from "../../settings/settings";
 import { isFirefox, platform } from "../../Platform";
 import { setPipEnabled$ } from "../../controls";
@@ -89,7 +90,8 @@ import {
   screenShareLimitsForBudget,
   screenShareRequest,
 } from "../screenShareOptions";
-import { prepareSinkDevice, sinkOfChoice } from "../shareAudioSink";
+import { shareAudioMix, shareAudioMode } from "../shareAudioSink";
+import { createShareAudioMix, mixSourceKinds } from "../shareAudioMixer";
 import { type MuteStates } from "../MuteStates";
 import {
   recordCallDiagnostics,
@@ -1576,14 +1578,12 @@ export function createCallViewModel$(
   let screenShareSettings: VideoCaptureSettings | undefined;
   let screenShareAudioAsked = false;
   let screenShareBudget: ShareDiagnostics["budget"];
-  const startingScreenShare = (sinkDeviceId?: string): PublishRequest => {
+  const startingScreenShare = (mix?: MediaStreamTrack): PublishRequest => {
     // The developer settings win; otherwise what the share menu says now
-    const request = {
-      ...screenShareRequest({
-        ...screenShareChoices(),
-        // The device the host made of the chosen sink, in the sink's place
-        ...(sinkDeviceId !== undefined && { audio: sinkDeviceId }),
-      }),
+    const request: Extract<PublishRequest, { source: "screenShare" }> = {
+      ...screenShareRequest(),
+      // The mix made here, in place of a device of the SDK's own choosing
+      ...(mix !== undefined && { audio: { kind: "track", track: mix } }),
       ...(capture.screenShare && { capture: capture.screenShare }),
     };
     screenShareSettings = request.capture;
@@ -1597,13 +1597,10 @@ export function createCallViewModel$(
       customBitrateMbps: choices.customBitrate,
       customFramerate: choices.customFramerate,
       // Which kind of source, never which device: its id says nothing useful
-      audio: ["none", "system"].includes(choices.audio)
-        ? choices.audio
-        : sinkOfChoice(choices.audio) !== undefined
-          ? sinkDeviceId !== undefined
-            ? "sink"
-            : "sink (unavailable)"
-          : "device",
+      audio: mix !== undefined ? "mix" : shareAudioMode(choices.audio),
+      audioSources: mixSourceKinds(
+        shareAudioMix(choices.audio, screenShareAudioMix.getValue()),
+      ),
       developerOverride: capture.screenShare !== undefined,
       capture: request.capture,
     });
@@ -1684,37 +1681,15 @@ export function createCallViewModel$(
           logger.error("Failed to change the screen share's encoding", e);
         });
       });
-  // Where the share's audio is what plays into an output, the host makes a
-  // capture device of that output for as long as the share is on
-  let shareSinkPrepared = false;
-  const prepareShareSink = async (): Promise<string | undefined> => {
-    const sink = sinkOfChoice(screenShareChoices().audio);
-    if (sink === undefined) return undefined;
-    try {
-      if (hostBridge.shareAudio === undefined)
-        throw new Error("The host cannot share an output's audio");
-      shareSinkPrepared = true;
-      const deviceId = await prepareSinkDevice(hostBridge.shareAudio, sink);
-      diag("share_audio_sink", { sink, ok: true });
-      return deviceId;
-    } catch (e) {
-      // The picture is worth sharing without the sound
-      diag("share_audio_sink", { sink, ok: false, error: describeError(e) });
-      logger.warn("Could not take the share's audio from the output", e);
-      releaseShareSink();
-      return undefined;
-    }
-  };
-  const releaseShareSink = (): void => {
-    if (!shareSinkPrepared) return;
-    shareSinkPrepared = false;
-    diag("share_audio_sink_release");
-    void hostBridge.shareAudio?.releaseShareSource();
-  };
+  // Unless it is the picker's own, a share's audio is a mix made here: one
+  // track for as long as the share is on, with the sources and their gains
+  // following the settings, so that they can change without republishing
+  const { start: startShareAudioMix, end: endShareAudioMix } =
+    createShareAudioMix(scope, hostBridge.shareAudio);
   sharingScreen$.pipe(pairwise(), scope.bind()).subscribe(([was, is]) => {
-    if (was && !is) releaseShareSink();
+    if (was && !is) endShareAudioMix();
   });
-  scope.onEnd(releaseShareSink);
+  scope.onEnd(endShareAudioMix);
 
   /**
    * Callback to toggle screen sharing. If null, screen sharing is not possible:
@@ -1727,10 +1702,8 @@ export function createCallViewModel$(
           const track = screenShare$.value;
           if (track !== undefined) diag("screen_share_stop", { by: "user" });
           (track === undefined
-            ? prepareShareSink()
-                .then(async (sinkDeviceId) =>
-                  rtcParticipation.publish(startingScreenShare(sinkDeviceId)),
-                )
+            ? rtcParticipation
+                .publish(startingScreenShare(startShareAudioMix()))
                 .then((started) =>
                   diag("screen_share_published", {
                     sid: started.id,
@@ -1739,7 +1712,7 @@ export function createCallViewModel$(
                 )
             : rtcParticipation.unpublish("screenShare")
           ).catch((e: unknown) => {
-            if (track === undefined) releaseShareSink();
+            if (track === undefined) endShareAudioMix();
             diag("screen_share_error", {
               phase: track === undefined ? "start" : "stop",
               cancelled: isPermissionDenied(e),

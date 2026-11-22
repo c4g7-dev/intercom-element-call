@@ -309,6 +309,17 @@ export class Publisher {
             screenShareAudioPublishOptions,
           );
         else this.stopScreenShareAudioDevice();
+      } else if (
+        typeof request.audio === "object" &&
+        request.audio.kind === "track"
+      ) {
+        // The picker may have offered audio of its own, which was not asked for
+        systemAudio?.stop();
+        if (participant.getTrackPublication(Track.Source.ScreenShare))
+          await participant.publishTrack(
+            request.audio.track,
+            screenShareAudioPublishOptions,
+          );
       } else if (systemAudio !== undefined)
         await participant.publishTrack(
           systemAudio,

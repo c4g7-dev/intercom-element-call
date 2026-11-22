@@ -139,6 +139,11 @@ export interface ShareSink {
   apps: string[];
   /** Whether the call itself plays into it: sharing it sends the call back. */
   ownPlayback: boolean;
+  /**
+   * What the capture device that already carries this output's sound is
+   * called in the browser's device list, where there is one.
+   */
+  source?: string;
 }
 
 export interface ShareAudioHost {
@@ -148,8 +153,11 @@ export interface ShareAudioHost {
    * @returns what the device is called in the browser's device list
    */
   prepareShareSource(sinkName: string): Promise<{ description: string }>;
-  /** Lets go of the device made for the share. Never rejects. */
-  releaseShareSource(): Promise<void>;
+  /**
+   * Lets go of the device made for a sink, or of all that were made. Never
+   * rejects.
+   */
+  releaseShareSource(sinkName?: string): Promise<void>;
 }
 
 /** The widget action of the share audio requests, a contract with the host. */
@@ -174,6 +182,8 @@ function toShareSinks(value: unknown): ShareSink[] {
         ? sink.apps.filter((app): app is string => typeof app === "string")
         : [],
       ownPlayback: sink.ownPlayback === true,
+      ...(typeof sink.source === "string" &&
+        sink.source && { source: sink.source }),
     }));
 }
 
@@ -205,9 +215,12 @@ export function createWidgetShareAudio(
         throw new Error("The host did not name the share's audio device");
       return { description: reply.description };
     },
-    releaseShareSource: async () => {
+    releaseShareSource: async (sinkName) => {
       try {
-        await send({ op: "release" });
+        await send({
+          op: "release",
+          ...(sinkName !== undefined && { sink: sinkName }),
+        });
       } catch {
         // Nothing to be done about it from here
       }

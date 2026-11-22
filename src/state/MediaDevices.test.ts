@@ -150,6 +150,26 @@ describe("MediaDevices selection", () => {
     expect(devices.audioInput.selected$.value?.id).toBe("mic1");
   });
 
+  test("keeps the inputs that carry a share's audio out of the microphones", () => {
+    const devices = newMediaDevices();
+    setDevices("audioinput", [
+      device("mic1", "Microphone 1"),
+      device("s1", "InterCom-Share-Music"),
+      device("s2", "InterCom-Screen-Audio"),
+      device("s3", "InterCom share: Virtual Games"),
+    ]);
+    expect([...devices.audioInput.available$.value.keys()]).toEqual(["mic1"]);
+    expect([...devices.shareAudioSources$.value]).toEqual([
+      ["s1", { type: "name", name: "InterCom-Share-Music" }],
+      ["s2", { type: "name", name: "InterCom-Screen-Audio" }],
+      ["s3", { type: "name", name: "InterCom share: Virtual Games" }],
+    ]);
+
+    // One of them remembered as the microphone is not selected as it
+    devices.audioInput.select("s1");
+    expect(devices.audioInput.selected$.value?.id).toBe("mic1");
+  });
+
   test("falls back to numbered labels when labels are unavailable", () => {
     const devices = newMediaDevices();
     // Names are withheld until permission is granted.

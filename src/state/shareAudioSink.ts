@@ -6,6 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { type ShareAudioHost, type ShareSink } from "../HostBridge";
+import { type ShareAudioMixSource } from "../settings/settings";
 
 /**
  * How the share audio setting says "what plays into this output": the prefix
@@ -14,8 +15,57 @@ import { type ShareAudioHost, type ShareSink } from "../HostBridge";
  */
 export const SINK_CHOICE_PREFIX = "sink:";
 
-/** What the host calls the devices it makes, which are not offered as inputs. */
-export const SHARE_DEVICE_LABEL_PREFIX = "InterCom share: ";
+/**
+ * The audio inputs that exist to carry an output's sound into a share: the
+ * ones the host makes and the ones a user set up by the same names. They are
+ * offered as share audio and kept out of the microphone list.
+ */
+const SHARE_SOURCE_LABEL = /^(InterCom-Share|InterCom-Screen|InterCom share: )/;
+
+export function isShareSourceLabel(label: string): boolean {
+  return SHARE_SOURCE_LABEL.test(label);
+}
+
+export type ShareAudioMode = "none" | "system" | "mix";
+
+/** What the share audio setting says, an old value being a mix of one. */
+export function shareAudioMode(choice: string): ShareAudioMode {
+  return choice === "none" || choice === "system" ? choice : "mix";
+}
+
+const MAX_MIX_GAIN = 2;
+
+/** A stored mix as it can be trusted: known shapes, each source once. */
+export function sanitizeMix(value: unknown): ShareAudioMixSource[] {
+  if (!Array.isArray(value)) return [];
+  const mix = new Map<string, ShareAudioMixSource>();
+  for (const entry of value as Partial<ShareAudioMixSource>[]) {
+    if (typeof entry?.id !== "string" || entry.id === "" || mix.has(entry.id))
+      continue;
+    const gain = Number(entry.gain);
+    mix.set(entry.id, {
+      id: entry.id,
+      gain: Number.isFinite(gain)
+        ? Math.min(Math.max(gain, 0), MAX_MIX_GAIN)
+        : 1,
+      muted: entry.muted === true,
+    });
+  }
+  return [...mix.values()];
+}
+
+/**
+ * The sources a share's audio is mixed from, for the two settings: none
+ * unless the mode is `mix`, and the one source an old setting named.
+ */
+export function shareAudioMix(
+  choice: string,
+  mix: unknown,
+): ShareAudioMixSource[] {
+  if (shareAudioMode(choice) !== "mix") return [];
+  if (choice !== "mix") return [{ id: choice, gain: 1, muted: false }];
+  return sanitizeMix(mix);
+}
 
 export function sinkChoice(sinkName: string): string {
   return SINK_CHOICE_PREFIX + sinkName;

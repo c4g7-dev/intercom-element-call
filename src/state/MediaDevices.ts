@@ -29,6 +29,7 @@ import { availableOutputDevices$ as controlledAvailableOutputDevices$ } from "..
 import { platform } from "../Platform";
 import { switchWhen } from "../utils/observable";
 import { type Behavior, constant } from "./Behavior";
+import { isShareSourceLabel } from "./shareAudioSink";
 import { AndroidControlledAudioOutput } from "./AndroidControlledAudioOutput.ts";
 import { IOSControlledAudioOutput } from "./IOSControlledAudioOutput.ts";
 
@@ -202,8 +203,23 @@ class AudioInput implements MediaDevice<DeviceLabel, SelectedAudioInputDevice> {
       this.logger,
     );
 
+  // The inputs that exist to carry an output's sound into a screen share are
+  // no microphones: they are offered as share audio instead
   public readonly available$ = this.scope.behavior(
-    this.availableRaw$.pipe(map(buildDeviceMap)),
+    this.availableRaw$.pipe(
+      map((devices) =>
+        buildDeviceMap(devices.filter((d) => !isShareSourceLabel(d.label))),
+      ),
+    ),
+  );
+
+  /** The inputs kept out of `available$`: what a screen share can take its audio from. */
+  public readonly shareSources$ = this.scope.behavior(
+    this.availableRaw$.pipe(
+      map((devices) =>
+        buildDeviceMap(devices.filter((d) => isShareSourceLabel(d.label))),
+      ),
+    ),
   );
 
   public readonly selected$ = this.scope.behavior(
@@ -383,10 +399,20 @@ export class MediaDevices {
     this.deviceNamesRequest$.pipe(map(() => true)),
     false,
   );
+  private readonly audioInputDevices = new AudioInput(
+    this.usingNames$,
+    this.scope,
+  );
   public readonly audioInput: MediaDevice<
     DeviceLabel,
     SelectedAudioInputDevice
-  > = new AudioInput(this.usingNames$, this.scope);
+  > = this.audioInputDevices;
+  /**
+   * The audio inputs that are not microphones but sources of screen share
+   * audio (see `isShareSourceLabel`), which `audioInput` leaves out.
+   */
+  public readonly shareAudioSources$: Behavior<Map<string, DeviceLabel>> =
+    this.audioInputDevices.shareSources$;
 
   public readonly audioOutput: MediaDevice<
     AudioOutputDeviceLabel,

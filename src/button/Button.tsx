@@ -131,6 +131,26 @@ export const ShareScreenButton: FC<ShareScreenButtonProps> = ({
   );
 };
 
+interface ShareAudioButtonProps extends ComponentPropsWithoutRef<"button"> {
+  size: "md" | "lg";
+}
+
+/** Opens the sources of the audio of the screen share that is on. */
+export const ShareAudioButton: FC<ShareAudioButtonProps> = (props) => {
+  const { t } = useTranslation();
+
+  return (
+    <Tooltip label={t("screen_share_options.audio_live_button")}>
+      <CpdButton
+        iconOnly
+        Icon={VolumeOnSolidIcon}
+        kind="secondary"
+        {...props}
+      />
+    </Tooltip>
+  );
+};
+
 interface EndCallButtonProps extends ComponentPropsWithoutRef<"button"> {
   size?: "md" | "lg";
 }

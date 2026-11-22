@@ -233,10 +233,32 @@ export const callLayoutPreference = new Setting<"auto" | "equal-grid">(
   "auto",
 );
 
-/** `none`, `system` (what the browser's picker offers) or the id of an audio input. */
+/**
+ * `none`, `system` (what the browser's picker offers) or `mix` (the sources
+ * of `screenShareAudioMix`). Once it held the id of an audio input or
+ * `sink:<name>`, which is read as a mix of that one source.
+ */
 export const screenShareAudioSource = new Setting<string>(
   "intercom-screen-share-audio-source",
   "system",
+);
+
+/** One source of a screen share's audio mix. */
+export interface ShareAudioMixSource {
+  /** The id of an audio input, or `sink:<name>` for what plays into an output. */
+  id: string;
+  /** A scalar multiplier, 0 to 2. */
+  gain: number;
+  muted: boolean;
+}
+
+/**
+ * The sources mixed into a screen share's audio, where
+ * `screenShareAudioSource` says `mix`.
+ */
+export const screenShareAudioMix = new Setting<ShareAudioMixSource[]>(
+  "intercom-screen-share-audio-mix",
+  [],
 );
 
 /** In Mbps; 0 leaves the bitrate to the preset. */

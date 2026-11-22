@@ -99,15 +99,10 @@ describe("screenShareCaptureSettings", () => {
 });
 
 describe("screenShareRequest", () => {
-  test("takes the audio from the picker, a device or nowhere", () => {
+  test("takes the audio from the picker, or leaves it to a mix made elsewhere", () => {
     expect(screenShareRequest(defaults).audio).toEqual({ kind: "system" });
-    expect(screenShareRequest({ ...defaults, audio: "none" }).audio).toBe(
-      false,
-    );
-    expect(screenShareRequest({ ...defaults, audio: "abc" }).audio).toEqual({
-      kind: "device",
-      deviceId: "abc",
-    });
+    for (const audio of ["none", "mix", "abc", "sink:virtual-music"])
+      expect(screenShareRequest({ ...defaults, audio }).audio).toBe(false);
   });
 });
 

@@ -443,6 +443,30 @@ describe("Publisher", () => {
         expect(track(Track.Source.ScreenShareAudio)).toBeDefined();
       });
 
+      it("publishes a track the application made as the screen share's audio, as it is", async () => {
+        const tracks = captured({ width: 1920, height: 1080 }, true);
+        vi.spyOn(participant, "createScreenTracks").mockResolvedValue(tracks);
+        const mix = fakeMediaStreamTrack("audio");
+
+        await publisher.publish({
+          ...sharp,
+          audio: { kind: "track", track: mix },
+        });
+
+        expect(getUserMedia).not.toHaveBeenCalled();
+        expect(participant.publishTrack).toHaveBeenLastCalledWith(mix, {
+          source: Track.Source.ScreenShareAudio,
+          audioPreset: { maxBitrate: 192_000 },
+          dtx: false,
+          red: false,
+          forceStereo: true,
+        });
+        expect(track(Track.Source.ScreenShareAudio)).toBeDefined();
+        // The picker's own audio was not asked for
+        const pickerAudio = tracks.find((t) => t.kind === Track.Kind.Audio)!;
+        expect(pickerAudio.stop).toHaveBeenCalled();
+      });
+
       it("publishes the picker's audio where it gave one", async () => {
         vi.spyOn(participant, "createScreenTracks").mockResolvedValue(
           captured({ width: 1920, height: 1080 }, true),

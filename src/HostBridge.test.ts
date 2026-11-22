@@ -318,7 +318,11 @@ describe("createWidgetShareAudio", () => {
           apps: ["Spotify", 5],
           ownPlayback: false,
         },
-        { name: "virtual-discord", ownPlayback: true },
+        {
+          name: "virtual-discord",
+          ownPlayback: true,
+          source: "InterCom-Share-Discord",
+        },
         { description: "nameless" },
         "nonsense",
       ],
@@ -337,6 +341,7 @@ describe("createWidgetShareAudio", () => {
           description: "virtual-discord",
           apps: [],
           ownPlayback: true,
+          source: "InterCom-Share-Discord",
         },
       ],
     });
@@ -376,6 +381,11 @@ describe("createWidgetShareAudio", () => {
       createWidgetShareAudio(send).releaseShareSource(),
     ).resolves.toBeUndefined();
     expect(send).toHaveBeenCalledWith({ op: "release" });
+    await createWidgetShareAudio(send).releaseShareSource("virtual-music");
+    expect(send).toHaveBeenLastCalledWith({
+      op: "release",
+      sink: "virtual-music",
+    });
   });
 
   test("goes to the host as the share audio widget action", async () => {

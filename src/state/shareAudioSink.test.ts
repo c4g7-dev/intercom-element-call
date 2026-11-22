@@ -8,6 +8,10 @@ Please see LICENSE in the repository root for full details.
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  isShareSourceLabel,
+  sanitizeMix,
+  shareAudioMix,
+  shareAudioMode,
   findDeviceByDescription,
   prepareSinkDevice,
   sinkChoice,
@@ -117,5 +121,58 @@ describe("prepareSinkDevice", () => {
       "No such sink",
     );
     expect(enumerate).not.toHaveBeenCalled();
+  });
+});
+
+describe("the share audio settings", () => {
+  it("knows the inputs that carry an output's sound by their names", () => {
+    for (const label of [
+      "InterCom-Share-Music",
+      "InterCom-Screen-Audio",
+      "InterCom share: Virtual Music",
+    ])
+      expect(isShareSourceLabel(label)).toBe(true);
+    for (const label of ["Microphone", "Monitor of InterCom-Share", ""])
+      expect(isShareSourceLabel(label)).toBe(false);
+  });
+
+  it("reads the mode, an old single source being a mix", () => {
+    expect(shareAudioMode("none")).toBe("none");
+    expect(shareAudioMode("system")).toBe("system");
+    for (const mix of ["mix", "abc123", "sink:virtual-music"])
+      expect(shareAudioMode(mix)).toBe("mix");
+  });
+
+  it("mixes nothing unless the mode is mix, and the one source of an old setting", () => {
+    const mix = [{ id: "a", gain: 1.2, muted: false }];
+    expect(shareAudioMix("none", mix)).toEqual([]);
+    expect(shareAudioMix("system", mix)).toEqual([]);
+    expect(shareAudioMix("mix", mix)).toEqual(mix);
+    expect(shareAudioMix("sink:virtual-music", mix)).toEqual([
+      { id: "sink:virtual-music", gain: 1, muted: false },
+    ]);
+  });
+
+  it("trusts a stored mix only as far as its shape goes", () => {
+    expect(
+      sanitizeMix([
+        { id: "a", gain: 1.5, muted: true },
+        { id: "a", gain: 0.2, muted: false },
+        { id: "b", gain: 9 },
+        { id: "c", gain: -1 },
+        { id: "d", gain: "loud" },
+        { id: "" },
+        { gain: 1 },
+        null,
+        "x",
+      ]),
+    ).toEqual([
+      { id: "a", gain: 1.5, muted: true },
+      { id: "b", gain: 2, muted: false },
+      { id: "c", gain: 0, muted: false },
+      { id: "d", gain: 1, muted: false },
+    ]);
+    expect(sanitizeMix("nonsense")).toEqual([]);
+    expect(sanitizeMix(undefined)).toEqual([]);
   });
 });

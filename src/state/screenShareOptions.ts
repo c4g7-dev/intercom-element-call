@@ -5,7 +5,6 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { sinkOfChoice } from "./shareAudioSink";
 import {
   type PublishRequest,
   type ScreenShareAudioSource,
@@ -118,7 +117,7 @@ export interface ScreenShareChoices {
   preset: ScreenSharePreset;
   resolution: ScreenShareResolutionMode;
   codec: VideoCodec | "auto";
-  /** `none`, `system`, the id of an audio input or `sink:<name>`. */
+  /** `none`, `system` or `mix` (see `screenShareAudioSource`). */
   audio: string;
   /** In Mbps; 0 for the preset's. */
   customBitrate: number;
@@ -201,10 +200,9 @@ export function screenShareAudio(
 ): boolean | ScreenShareAudioSource {
   if (choice === "none") return false;
   if (choice === "system") return { kind: "system" };
-  // A sink has no device until the host has made one: whoever starts the
-  // share swaps the device's id in first, and without it there is no audio
-  if (sinkOfChoice(choice) !== undefined) return false;
-  return { kind: "device", deviceId: choice };
+  // Anything else is a mix, whose track whoever starts the share makes and
+  // puts in this place; without one there is no audio
+  return false;
 }
 
 export function screenShareRequest(

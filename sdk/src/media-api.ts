@@ -73,7 +73,13 @@ export type ScreenShareAudioSource =
    * An audio input device, opened without any voice processing and published
    * as the screen share's audio: on Linux, the monitor of an output device.
    */
-  | { kind: "device"; deviceId: string };
+  | { kind: "device"; deviceId: string }
+  /**
+   * A track the application made itself, a mix of several sources for one,
+   * published as it is. It is the application's to stop; unpublishing the
+   * share ends it like any other published track.
+   */
+  | { kind: "track"; track: MediaStreamTrack };
 
 /** How a published video track is encoded from now on, without republishing. */
 export interface VideoEncodingLimits {
