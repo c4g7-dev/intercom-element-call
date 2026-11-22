@@ -5,14 +5,16 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { describe, expect, it, test } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, expect, it, test, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { axe } from "vitest-axe";
 import { TooltipProvider } from "@vector-im/compound-web";
 import { type ComponentProps } from "react";
 
 import { MediaView } from "./MediaView";
 import { mockVideoTrack } from "../utils/test";
+import { constant } from "../state/Behavior";
 
 describe("MediaView", () => {
   const track = mockVideoTrack({ source: "camera" });
@@ -58,6 +60,61 @@ describe("MediaView", () => {
         "data-source",
         "screenShare",
       );
+    });
+  });
+
+  describe("tile actions", () => {
+    it("shows the tile fullscreen from its button and on a double click", async () => {
+      const requestFullscreen = vi.fn(async () => Promise.resolve());
+      HTMLElement.prototype.requestFullscreen = requestFullscreen;
+      render(<MediaView {...baseProps} />);
+
+      // Shown on hover only, which a test DOM has no way to do
+      fireEvent.click(screen.getByTestId("tile_fullscreen"));
+      expect(requestFullscreen).toHaveBeenCalledTimes(1);
+      expect(requestFullscreen.mock.contexts[0]).toBe(
+        screen.getByTestId("videoTile"),
+      );
+
+      await userEvent.dblClick(screen.getByTestId("video"));
+      expect(requestFullscreen).toHaveBeenCalledTimes(2);
+    });
+
+    it("asks for the best quality of a screen share, and of a camera only when fullscreen", () => {
+      const camera = mockVideoTrack({ source: "camera" });
+      const screenShare = mockVideoTrack({ source: "screenShare" });
+      render(<MediaView {...baseProps} video={camera} />);
+      render(<MediaView {...baseProps} video={screenShare} />);
+      expect(camera.requestHighQuality).not.toHaveBeenCalled();
+      expect(screenShare.requestHighQuality).toHaveBeenCalledOnce();
+    });
+
+    it("offers no window or fullscreen without a video, and a volume only with controls", async () => {
+      const { unmount } = render(
+        <MediaView {...baseProps} video={undefined} />,
+      );
+      expect(screen.queryByTestId("tile_actions")).toBe(null);
+      unmount();
+
+      const adjustPlaybackVolume = vi.fn();
+      render(
+        <MediaView
+          {...baseProps}
+          video={undefined}
+          volumeControls={{
+            playbackVolume$: constant(1),
+            playbackMuted$: constant(false),
+            togglePlaybackMuted: vi.fn(),
+            adjustPlaybackVolume,
+            commitPlaybackVolume: vi.fn(),
+          }}
+        />,
+      );
+      expect(screen.queryByTestId("tile_fullscreen")).toBe(null);
+      const slider = screen.getByRole("slider", { name: "Volume" });
+      expect(slider).toHaveAttribute("max", "200");
+      fireEvent.change(slider, { target: { value: "150" } });
+      expect(adjustPlaybackVolume).toHaveBeenCalledWith(1.5);
     });
   });
 

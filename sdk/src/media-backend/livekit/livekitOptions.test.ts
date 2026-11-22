@@ -13,7 +13,10 @@ import { buildLiveKitOptions } from "./livekitOptions";
 describe("buildLiveKitOptions", () => {
   it("returns sensible defaults with no config", () => {
     const opts = buildLiveKitOptions();
-    expect(opts.adaptiveStream).toEqual({ pixelDensity: "screen" });
+    expect(opts.adaptiveStream).toEqual({
+      pixelDensity: "screen",
+      pauseVideoInBackground: false,
+    });
     expect(opts.dynacast).toBe(true);
     expect(opts.videoCaptureDefaults?.resolution).toEqual(
       VideoPresets.h1080.resolution,

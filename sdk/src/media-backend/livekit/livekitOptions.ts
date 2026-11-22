@@ -126,7 +126,10 @@ export function buildLiveKitOptions(mediaQuality?: MediaQuality): RoomOptions {
   return {
     // automatically manage subscribed video quality, by the size of the
     // elements in device pixels so that a HiDPI screen gets the sharp layer
-    adaptiveStream: { pixelDensity: "screen" },
+    // Not paused while the page is in the background: a video shown in a
+    // window of its own (a pop-out) has to keep playing when the call's
+    // window is minimised or on another workspace.
+    adaptiveStream: { pixelDensity: "screen", pauseVideoInBackground: false },
 
     // optimize publishing bandwidth and CPU for published tracks
     dynacast: true,

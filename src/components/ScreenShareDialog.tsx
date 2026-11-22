@@ -176,7 +176,10 @@ export const ScreenShareDialog: FC<Props> = ({ open, onDismiss, onShare }) => {
         </Field>
         <details className={styles.advanced}>
           <summary>{t("screen_share_options.advanced")}</summary>
-          <Field label={t("screen_share_options.codec")}>
+          <Field
+            label={t("screen_share_options.codec")}
+            hint={t("screen_share_options.codec_hint")}
+          >
             {(id) => (
               <select
                 id={id}

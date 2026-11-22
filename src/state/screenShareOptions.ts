@@ -25,19 +25,29 @@ import {
 } from "../settings/settings";
 
 /**
- * The codec a screen share is sent with unless the user picks another.
+ * The codec a screen share is sent with unless the user picks another: VP8,
+ * with the `detail` content hint.
  *
- * VP8, with the `detail` content hint. VP9 and AV1 would need fewer bits for
- * the same text (AV1's screen content tools most of all), but LiveKit
- * publishes both with SVC and, as a workaround for a Chrome limit of 5 fps on
- * SVC screen shares, forces their content hint to `motion`: the screen
- * content mode that makes them efficient is switched off, and what is left of
- * the saving is not worth software AV1/VP9 at 1440p on every share. VP8 keeps
- * `detail` (the encoder holds the resolution and spends its bits on sharp
- * edges), is the one codec every LiveKit deployment and every viewer has,
- * and is the best-trodden path through LiveKit's end-to-end encryption. With
- * the bitrates the presets ask for it is visually clean. VP9 and AV1 stay one
- * click away for when bits are scarce.
+ * Measured with Chromium 154 (software encoders, loopback, scrolling text at
+ * 2560x1440 and 30 fps, all with `detail`):
+ *
+ * - VP8: 29 fps, 14-17 ms of encoding a frame, about 2 Mbps for that content.
+ * - VP9 (L1T3): 27-29 fps, 15-20 ms a frame, about 1.5 Mbps.
+ * - AV1 (L1T3): 29 fps, 15-20 ms a frame, about 0.1 Mbps: its screen content
+ *   tools (palette, intra block copy) need a fraction of the bits for text.
+ * - H.264 (OpenH264): 23 fps at 27 ms a frame; it does not keep up.
+ * - At 3840x2160 none of them holds 30 fps in software (VP8 16 fps, AV1
+ *   22 fps), which is why `auto` sends a 4K screen at half size.
+ *
+ * AV1 is the efficient one by a wide margin, and is the one to pick when
+ * bits are scarce (a small server budget shared by many viewers). It is not
+ * the default because a share has to work for every viewer every time, and
+ * that could only be shown for VP8 here: every LiveKit deployment and every
+ * client decodes VP8, and it is the best-trodden path through LiveKit's
+ * end-to-end encryption, where a viewer that cannot decode an AV1 share sees
+ * nothing (LiveKit publishes no backup codec while encryption is on). AV1
+ * and VP9 through end-to-end encryption were not exercised against a real
+ * SFU. At the bitrates the presets ask for, VP8 is visually clean.
  */
 export const DEFAULT_SCREEN_SHARE_CODEC: VideoCodec = "vp8";
 

@@ -217,6 +217,7 @@
     "audio_unavailable": "Previously selected device (unavailable)",
     "codec": "Video codec",
     "codec_auto": "Auto ({{codec}})",
+    "codec_hint": "AV1 needs far fewer bits for text, but every viewer must be able to decode it.",
     "custom_bitrate": "Custom bitrate (Mbps, 0 = automatic)",
     "custom_bitrate_warning": "A custom bitrate ignores the server's budget of {{budget}} Mbps, which is shared between the viewers.",
     "custom_framerate": "Custom frame rate (0 = automatic)",

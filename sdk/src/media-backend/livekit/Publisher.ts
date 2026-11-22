@@ -276,14 +276,16 @@ export class Publisher {
       throw e;
     }
     // LiveKit replaces the hint with `motion` for the codecs it publishes
-    // with SVC (VP9, AV1), as a workaround for a frame rate limit in Chrome.
-    // For the others, whatever it was set to is put back.
+    // with SVC (VP9, AV1), as a workaround for an old Chrome limit of 5 fps
+    // on SVC screen shares. That switches the encoder's screen content mode
+    // off, which for AV1 is the whole point of using it: measured in
+    // Chromium 154 on scrolling text at 1440p, AV1 L1T3 runs at 29 fps either
+    // way and needs about 0.1 Mbps with `detail` where `motion` takes 3 Mbps.
+    // So the hint that was asked for is put back; a change of hint on a live
+    // track reconfigures the encoder.
     const hint = request.capture?.contentHint;
-    const codec = request.capture?.codec;
     if (
       hint !== undefined &&
-      codec !== "vp9" &&
-      codec !== "av1" &&
       "contentHint" in video.mediaStreamTrack &&
       video.mediaStreamTrack.contentHint !== hint
     )
