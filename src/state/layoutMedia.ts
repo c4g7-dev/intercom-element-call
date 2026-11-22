@@ -7,6 +7,7 @@ Please see LICENSE in the repository root for full details.
 
 import { type LayoutMode } from "./LayoutSwitchViewModel.ts";
 import {
+  type EqualGridLayoutMedia,
   type GridLayoutMedia,
   type LayoutMedia,
   type OneOnOneDesktopLayoutMedia,
@@ -102,6 +103,8 @@ export interface LayoutMediaInputs {
   grid: UserMediaViewModel[];
   pip: UserMediaViewModel | undefined;
   desktop: boolean;
+  /** Every screen share in the call, for the layout that gives each a tile. */
+  screenShares?: ScreenShareViewModel[];
 }
 
 /**
@@ -117,7 +120,16 @@ export function computeLayoutMedia({
   grid,
   pip,
   desktop,
+  screenShares = [],
 }: LayoutMediaInputs): LayoutMedia {
+  // The equal grid is what it says whoever is in the call: no one-on-one
+  // layout and no spotlight take its place. A window too flat for a grid gets
+  // what the grid layout gets there.
+  if (
+    layoutMode === "equal-grid" &&
+    (windowMode === "normal" || windowMode === "narrow")
+  )
+    return equalGridLayoutMedia(screenShares, grid);
   switch (windowMode) {
     case "normal":
       if (layoutMode === "grid")
@@ -138,7 +150,7 @@ export function computeLayoutMedia({
         return oneOnOneMobileLayoutMedia(oneOnOne, localVideoEnabled);
       // Yes, grid mode actually gets you a "spotlight" layout in this window
       // mode.
-      return layoutMode === "grid"
+      return layoutMode !== "spotlight"
         ? spotlightLandscapeLayoutMedia(true, spotlight, grid)
         : spotlightExpandedLayoutMedia(true, spotlight, pip);
     case "pip":
@@ -160,6 +172,13 @@ function gridLayoutMedia(
     spotlight: hasScreenShare(spotlight) ? spotlight : undefined,
     grid,
   };
+}
+
+function equalGridLayoutMedia(
+  screenShares: ScreenShareViewModel[],
+  grid: UserMediaViewModel[],
+): EqualGridLayoutMedia {
+  return { type: "equal-grid", edgeToEdge: false, screenShares, grid };
 }
 
 function oneOnOneDesktopLayoutMedia(

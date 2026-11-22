@@ -17,8 +17,14 @@ import {
 import { type WindowMode } from "./layout-types.ts";
 import { constant, type Behavior } from "./Behavior.ts";
 import { type ObservableScope } from "./ObservableScope.ts";
+import { callLayoutPreference } from "../settings/settings.ts";
+import { diag } from "../diagnostics/diag.ts";
 
-export type LayoutMode = "spotlight" | "grid";
+/**
+ * `equal-grid` is the one layout that does not follow the call: every tile,
+ * screen shares included, at the same size, for as long as it is chosen.
+ */
+export type LayoutMode = "spotlight" | "grid" | "equal-grid";
 
 export interface LayoutSwitchViewModel {
   /**
@@ -46,7 +52,13 @@ export function createLayoutSwitchViewModel(
   // Callback to set the layout desired by the user.
   // Notice that this is only a preference, the actual layout can be overridden
   // if there is a remote screen share active.
-  const setLayout = (value: LayoutMode): void => userSelection$.next(value);
+  const setLayout = (value: LayoutMode): void => {
+    // The equal grid is kept for the next call; the other two are not a
+    // choice to keep, as they change with the call anyway
+    callLayoutPreference.setValue(value === "equal-grid" ? value : "auto");
+    diag("layout_choice", { layout: value });
+    userSelection$.next(value);
+  };
 
   /**
    * The natural layout - the layout that the interface would prefer to be in,
@@ -74,6 +86,8 @@ export function createLayoutSwitchViewModel(
     // Whenever the user makes a selection, we enter a new mode of behavior:
     userSelection$.pipe(
       map((selection) => {
+        // The equal grid stays until the user picks something else
+        if (selection === "equal-grid") return constant(selection);
         if (selection === "grid")
           // The user has selected grid. Start by respecting their choice, but
           // then follow the natural mode again as soon as it matches.
@@ -88,8 +102,13 @@ export function createLayoutSwitchViewModel(
           ? naturalLayout$
           : constant(selection);
       }),
-      // Initially the mode of behavior is to just follow the natural layout.
-      startWith(naturalLayout$),
+      // Initially the mode of behavior is to just follow the natural layout,
+      // unless the equal grid was chosen in an earlier call.
+      startWith(
+        callLayoutPreference.getValue() === "equal-grid"
+          ? constant<LayoutMode>("equal-grid")
+          : naturalLayout$,
+      ),
       // Switch between each mode of behavior.
       switchAll(),
     ),

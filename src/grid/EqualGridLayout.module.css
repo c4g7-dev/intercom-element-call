@@ -1,0 +1,23 @@
+/*
+Copyright 2026 InterCom contributors
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+.fixed {
+  block-size: 100%;
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding-inline: var(--gap);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+  gap: var(--gap);
+}
+
+.fixed > .slot {
+  inline-size: var(--width);
+  block-size: var(--height);
+}

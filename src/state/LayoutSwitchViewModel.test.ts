@@ -5,10 +5,23 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { describe, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { createLayoutSwitchViewModel } from "./LayoutSwitchViewModel";
 import { testScope, withTestScheduler } from "../utils/test";
+import { callLayoutPreference } from "../settings/settings";
+import { diagBuffer, diagOutput, resetDiag } from "../diagnostics/diag";
+
+const writeDiag = diagOutput.write;
+beforeEach(() => {
+  callLayoutPreference.setValue("auto");
+  diagOutput.write = (): void => {};
+  resetDiag();
+});
+afterEach(() => {
+  callLayoutPreference.setValue("auto");
+  diagOutput.write = writeDiag;
+});
 
 function testLayoutSwitch({
   windowMode = "n",
@@ -30,10 +43,12 @@ function testLayoutSwitch({
     schedule(userSelection, {
       g: () => setLayout("grid"),
       s: () => setLayout("spotlight"),
+      e: () => setLayout("equal-grid"),
     });
     expectObservable(layout$).toBe(expectedLayout, {
       g: "grid",
       s: "spotlight",
+      e: "equal-grid",
     });
   });
 }
@@ -124,3 +139,38 @@ test("ignores screen share until window mode returns to normal", () =>
     hasScreenShares: "ny-n",
     expectedLayout: " g-sg",
   }));
+
+describe("equal grid", () => {
+  test("stays through screen shares until another layout is picked", () =>
+    testLayoutSwitch({
+      hasScreenShares: "n--y-n-y",
+      userSelection: "  -e----g-",
+      expectedLayout: " ge----gs",
+    }));
+
+  test("stays in a flat window", () =>
+    testLayoutSwitch({
+      windowMode: "    n-f",
+      userSelection: " -e",
+      expectedLayout: "ge",
+    }));
+
+  test("is kept for the next call, and given up by picking another layout", () => {
+    testLayoutSwitch({ userSelection: "-e", expectedLayout: "ge" });
+    expect(callLayoutPreference.getValue()).toBe("equal-grid");
+    // The next call starts in it, screen share or not
+    testLayoutSwitch({ hasScreenShares: "ny", expectedLayout: "e" });
+    testLayoutSwitch({ userSelection: "-s", expectedLayout: "es" });
+    expect(callLayoutPreference.getValue()).toBe("auto");
+    testLayoutSwitch({ expectedLayout: "g" });
+  });
+
+  test("records what was picked in the diagnostics", () => {
+    testLayoutSwitch({ userSelection: "-eg", expectedLayout: "geg" });
+    expect(
+      diagBuffer()
+        .filter((r) => r.type === "layout_choice")
+        .map((r) => r.layout),
+    ).toEqual(["equal-grid", "grid"]);
+  });
+});

@@ -75,6 +75,7 @@ import { spotlightExpandedLayout } from "../SpotlightExpandedLayout";
 import { oneOnOneDesktopLayout } from "../OneOnOneDesktopLayout";
 import { oneOnOneMobileLayout } from "../OneOnOneMobileLayout";
 import { pipLayout } from "../PipLayout";
+import { equalGridLayout, type EqualGridShareTiles } from "../EqualGridLayout";
 import {
   type RaisedHandInfo,
   type ReactionInfo,
@@ -1097,9 +1098,11 @@ export function createCallViewModel$(
       localVideoEnabled$,
       spotlightAndPip$,
       grid$,
+      screenShares$,
     ).pipe(
       map(() =>
         computeLayoutMedia({
+          screenShares: screenShares$.value,
           windowMode: windowMode$.value,
           layoutMode: layoutSwitchVm.layout$.value,
           spotlightExpanded: spotlightExpanded$.value,
@@ -1115,8 +1118,23 @@ export function createCallViewModel$(
   );
 
   const showSpotlightIndicators$ = scope.behavior<boolean>(
-    layoutMedia$.pipe(map((l) => l.type !== "grid")),
+    layoutMedia$.pipe(map((l) => l.type !== "grid" && l.type !== "equal-grid")),
   );
+
+  // Which layout the call is in, whoever or whatever changed it
+  layoutMedia$
+    .pipe(
+      map((l) => l.type),
+      distinctUntilChanged(),
+      scope.bind(),
+    )
+    .subscribe((layout) =>
+      diag("layout", {
+        layout,
+        mode: layoutSwitchVm.layout$.value,
+        window: windowMode$.value,
+      }),
+    );
 
   const showSpeakingIndicators$ = scope.behavior<boolean>(
     layoutMedia$.pipe(
@@ -1329,6 +1347,7 @@ export function createCallViewModel$(
   // which tiles are on screen, but to know which tiles are on screen we have to
   // first render a layout. To deal with this we assume initially that all tiles
   // are visible, and loop the data back into the layouts with a Subject.
+  const equalGridShareTiles: EqualGridShareTiles = new WeakMap();
   const visibleTiles$ = new Subject<number>();
   const setVisibleTiles = (value: number): void => visibleTiles$.next(value);
 
@@ -1382,6 +1401,13 @@ export function createCallViewModel$(
                 prevTiles,
               );
               pip = layout.pip?.vm;
+              break;
+            case "equal-grid":
+              [layout, newTiles] = equalGridLayout(
+                media,
+                prevTiles,
+                equalGridShareTiles,
+              );
               break;
             case "pip":
               [layout, newTiles] = pipLayout(media, prevTiles);

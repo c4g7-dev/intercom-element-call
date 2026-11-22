@@ -67,6 +67,14 @@ export interface OneOnOneMobileLayoutMedia {
   pip?: LocalUserMediaViewModel;
 }
 
+export interface EqualGridLayoutMedia {
+  type: "equal-grid";
+  edgeToEdge: false;
+  /** Every screen share, each a tile of its own. */
+  screenShares: MediaViewModel[];
+  grid: UserMediaViewModel[];
+}
+
 export interface PipLayoutMedia {
   type: "pip";
   edgeToEdge: boolean;
@@ -80,6 +88,7 @@ export type LayoutMedia =
   | SpotlightExpandedLayoutMedia
   | OneOnOneDesktopLayoutMedia
   | OneOnOneMobileLayoutMedia
+  | EqualGridLayoutMedia
   | PipLayoutMedia;
 
 export interface Alignment {
@@ -151,6 +160,18 @@ export interface OneOnOneMobileLayout {
   pip?: FloatingTile & { vm: GridTileViewModel; size$: Behavior<"sm" | "lg"> };
 }
 
+/** A screen share as a tile among the others. */
+export interface EqualGridShareTile {
+  id: string;
+  vm: SpotlightTileViewModel;
+}
+
+export interface EqualGridLayout {
+  type: "equal-grid";
+  shares: EqualGridShareTile[];
+  grid: GridTileViewModel[];
+}
+
 export interface PipLayout {
   type: "pip";
   spotlight: SpotlightTileViewModel;
@@ -167,6 +188,7 @@ export type Layout =
   | SpotlightExpandedLayout
   | OneOnOneDesktopLayout
   | OneOnOneMobileLayout
+  | EqualGridLayout
   | PipLayout;
 
 /**

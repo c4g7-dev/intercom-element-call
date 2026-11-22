@@ -140,9 +140,46 @@ describe("computeLayoutMedia", () => {
       spotlight: undefined,
       grid: base.grid,
     });
-    expect(layout({ spotlight: [screenShare] }).spotlight).toEqual([
-      screenShare,
-    ]);
+    expect(layout({ spotlight: [screenShare] })).toMatchObject({
+      spotlight: [screenShare],
+    });
+  });
+
+  it("gives every member and every screen share a tile in the equal grid", () => {
+    const equal = {
+      type: "equal-grid",
+      edgeToEdge: false,
+      screenShares: [screenShare],
+      grid: base.grid,
+    };
+    const inputs = {
+      layoutMode: "equal-grid" as const,
+      spotlight: [screenShare],
+      screenShares: [screenShare as never],
+    };
+    expect(layout(inputs)).toEqual(equal);
+    expect(layout({ ...inputs, windowMode: "narrow" })).toEqual(equal);
+    // Nothing takes its place: not a call of two, not an expanded spotlight
+    expect(
+      layout({
+        ...inputs,
+        spotlightExpanded: true,
+        oneOnOne: { local: local as never, remote: alice },
+      }),
+    ).toEqual(equal);
+    expect(layout({ layoutMode: "equal-grid" })).toEqual({
+      ...equal,
+      screenShares: [],
+    });
+  });
+
+  it("falls back to what the grid gets where the window is no place for an equal grid", () => {
+    expect(
+      layout({ layoutMode: "equal-grid", windowMode: "flat" }),
+    ).toMatchObject({ type: "spotlight-landscape" });
+    expect(
+      layout({ layoutMode: "equal-grid", windowMode: "pip" }),
+    ).toMatchObject({ type: "pip" });
   });
 
   it("switches between landscape and expanded spotlight", () => {

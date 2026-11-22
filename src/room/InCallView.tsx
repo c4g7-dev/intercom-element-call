@@ -58,6 +58,7 @@ import { makeGridLayout } from "../grid/GridLayout";
 import { type CallLayoutOutputs } from "../grid/CallLayout";
 import { makeOneOnOneDesktopLayout } from "../grid/OneOnOneDesktopLayout";
 import { makeOneOnOneMobileLayout } from "../grid/OneOnOneMobileLayout";
+import { makeEqualGridLayout } from "../grid/EqualGridLayout";
 import { makeSpotlightExpandedLayout } from "../grid/SpotlightExpandedLayout";
 import { makeSpotlightLandscapeLayout } from "../grid/SpotlightLandscapeLayout";
 import { makeSpotlightPortraitLayout } from "../grid/SpotlightPortraitLayout";
@@ -595,6 +596,7 @@ export const InCallView: FC<InCallViewProps> = ({
       "spotlight-expanded": makeSpotlightExpandedLayout(inputs),
       "one-on-one-desktop": makeOneOnOneDesktopLayout(inputs),
       "one-on-one-mobile": makeOneOnOneMobileLayout(inputs),
+      "equal-grid": makeEqualGridLayout(inputs),
     };
   }, [gridBounds$]);
 

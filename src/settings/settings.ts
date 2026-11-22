@@ -224,6 +224,15 @@ export const screenShareCodecChoice = new Setting<VideoCodec | "auto">(
   "auto",
 );
 
+/**
+ * The call layout the user asked to keep: `equal-grid`, or `auto` for the
+ * grid and spotlight layouts, which follow what is going on in the call.
+ */
+export const callLayoutPreference = new Setting<"auto" | "equal-grid">(
+  "intercom-call-layout",
+  "auto",
+);
+
 /** `none`, `system` (what the browser's picker offers) or the id of an audio input. */
 export const screenShareAudioSource = new Setting<string>(
   "intercom-screen-share-audio-source",

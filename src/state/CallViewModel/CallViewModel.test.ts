@@ -158,7 +158,14 @@ export type LayoutSummary =
   | SpotlightExpandedLayoutSummary
   | OneOnOneLandscapeLayoutSummary
   | OneOnOnePortraitLayoutSummary
+  | EqualGridLayoutSummary
   | PipLayoutSummary;
+
+export interface EqualGridLayoutSummary {
+  type: "equal-grid";
+  shares: string[];
+  grid: string[];
+}
 
 function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
   return l$.pipe(
@@ -193,6 +200,21 @@ function summarizeLayout$(l$: Observable<Layout>): Observable<LayoutSummary> {
               type: l.type,
               spotlight: spotlight.map((vm) => vm.id),
               pip: pip?.id,
+            }),
+          );
+        case "equal-grid":
+          return combineLatest(
+            [
+              combineLatest([
+                constant(null),
+                ...l.shares.map((share) => share.vm.media$),
+              ]),
+              ...l.grid.map((vm) => vm.media$),
+            ],
+            ([, ...shares], ...grid) => ({
+              type: l.type,
+              shares: shares.flat().map((vm) => vm.id),
+              grid: grid.map((vm) => vm.id),
             }),
           );
         case "one-on-one-desktop":
@@ -332,6 +354,46 @@ describe.each(modes)("CallViewModel (%s mode)", (mode) => {
               },
             },
           );
+        },
+      );
+    });
+  });
+
+  test("the equal grid gives every screen share a tile and promotes none", () => {
+    withTestScheduler(({ behavior, schedule, expectObservable }) => {
+      const aliceSharingInputMarbles = "ny-n-";
+      const bobSharingInputMarbles = "  n-yn-";
+      const modeInputMarbles = "        e---g";
+      const grid = [`${localId}:0`, `${aliceId}:0`, `${bobId}:0`];
+      withCallViewModel(
+        {
+          remoteParticipants$: constant([aliceParticipant, bobParticipant]),
+          rtcMembers$: constant([localRtcMember, aliceRtcMember, bobRtcMember]),
+          sharingScreen: new Map([
+            [aliceParticipant, behavior(aliceSharingInputMarbles, yesNo)],
+            [bobParticipant, behavior(bobSharingInputMarbles, yesNo)],
+          ]),
+        },
+        (vm) => {
+          schedule(modeInputMarbles, {
+            e: () => vm.layoutSwitchVm$.value!.setLayout("equal-grid"),
+            g: () => vm.layoutSwitchVm$.value!.setLayout("grid"),
+          });
+          expectObservable(summarizeLayout$(vm.layout$)).toBe("abcag", {
+            a: { type: "equal-grid", shares: [], grid },
+            b: {
+              type: "equal-grid",
+              shares: [`${aliceId}:0:screen-share`],
+              grid,
+            },
+            c: {
+              type: "equal-grid",
+              shares: [`${aliceId}:0:screen-share`, `${bobId}:0:screen-share`],
+              grid,
+            },
+            g: { type: "grid", spotlight: undefined, grid },
+          });
+          expectObservable(vm.toggleSpotlightExpanded$).toBe("a", { a: null });
         },
       );
     });
