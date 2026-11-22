@@ -176,6 +176,25 @@ function shareAudioProblem(
   return undefined;
 }
 
+/**
+ * Whether the user has turned a received track all the way down here ("mute
+ * for me", volume 0, deafened). The browser measures the level of a track as
+ * it plays it, so such a track reads as silent although it arrives.
+ */
+export function mutedHere(track: TrackRecord): boolean {
+  return track.dir === "recv" && track.playbackVolume === 0;
+}
+
+/**
+ * What is wrong with a track that is muted here: only what does not depend
+ * on its sound, which is not measured while it is not played.
+ */
+function mutedHereProblem(track: TrackRecord): string | undefined {
+  if (track.muted) return "muted";
+  if (track.bitrate === 0) return "no bytes";
+  return undefined;
+}
+
 function shareAudioDetail(track: TrackRecord): string {
   return `${kbps(track.bitrate)}, level ${(track.audioLevel ?? 0).toFixed(2)}`;
 }
@@ -220,17 +239,35 @@ function shareAudioRecvChecks(
     );
     if (audio.length === 0) continue;
     const problems = audio
-      .map((t) => shareAudioProblem(t, context))
+      .map((t) =>
+        mutedHere(t) ? mutedHereProblem(t) : shareAudioProblem(t, context),
+      )
       .filter((p) => p !== undefined);
+    const silenced = audio.filter(mutedHere);
     results.push(
       problems.length > 0
         ? { id, participant, status: "fail", detail: problems.join("; ") }
-        : {
-            id,
-            participant,
-            status: "pass",
-            detail: audio.map(shareAudioDetail).join("; "),
-          },
+        : silenced.length > 0
+          ? {
+              // Neither a pass nor a failure: it arrives, and whether it has
+              // sound cannot be told while it is not played
+              id,
+              participant,
+              status: "na",
+              detail: audio
+                .map((t) =>
+                  mutedHere(t)
+                    ? `receiving ${kbps(t.bitrate)} · muted by you`
+                    : shareAudioDetail(t),
+                )
+                .join("; "),
+            }
+          : {
+              id,
+              participant,
+              status: "pass",
+              detail: audio.map(shareAudioDetail).join("; "),
+            },
     );
   }
   return results;

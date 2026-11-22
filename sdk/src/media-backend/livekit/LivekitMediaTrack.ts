@@ -189,7 +189,12 @@ export function createLivekitMediaTrack(
         switchMap(async () => rtpStreamStats(publication, participant.isLocal)),
         scope.bind(),
       ),
-    diagnostics: async () => trackDiagnostics(publication),
+    diagnostics: async () => {
+      const diagnostics = await trackDiagnostics(publication);
+      return diagnostics !== undefined && volume !== undefined
+        ? { ...diagnostics, playbackVolume: volume }
+        : diagnostics;
+    },
     attach: (element) => {
       if (attached.has(element)) return;
       attached.add(element);

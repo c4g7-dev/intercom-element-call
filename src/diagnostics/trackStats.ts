@@ -56,6 +56,12 @@ export interface TrackRecord {
   kind: "audio" | "video";
   sid: string;
   muted: boolean;
+  /**
+   * Received audio: the volume it is played at here, where the user set one.
+   * 0 is "muted for me", which is no fault of the track's: the browser then
+   * measures no level for it either.
+   */
+  playbackVolume?: number;
   codec?: string;
   /** The encoder's or decoder's own name. */
   impl?: string;
@@ -162,6 +168,11 @@ export function toTrackRecord(
     muted: identity.muted,
     hw: null,
     trackState: diagnostics.track?.readyState,
+    ...(!identity.local &&
+      identity.kind === "audio" &&
+      diagnostics.playbackVolume !== undefined && {
+        playbackVolume: diagnostics.playbackVolume,
+      }),
   };
   const counters: TrackCounters = { t: now, layerBytes: {} };
   const seconds =

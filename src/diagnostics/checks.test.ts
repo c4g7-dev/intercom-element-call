@@ -217,6 +217,51 @@ describe("evaluateChecks", () => {
       ]);
     });
 
+    it("is neither passed nor failed for a share the viewer muted for themselves", () => {
+      // A browser measures no level for audio it does not play: the track
+      // arrives, and reads as silent
+      const mutedByMe = (over: Partial<TrackRecord> = {}): TrackRecord[] => [
+        share({ dir: "recv", participant: "@a:x:D", sid: "v" }),
+        shareAudio({
+          dir: "recv",
+          participant: "@a:x:D",
+          sid: "a",
+          playbackVolume: 0,
+          audioLevel: 0,
+          audioEnergyDelta: 0,
+          ...over,
+        }),
+      ];
+      const verdict = (tracks: TrackRecord[], lastSoundAt = {}): unknown =>
+        evaluateChecks(tracks, { ...context, lastSoundAt }).find(
+          (r) => r.id === "share_audio_recv",
+        );
+
+      expect(verdict(mutedByMe())).toEqual({
+        id: "share_audio_recv",
+        participant: "@a:x:D",
+        status: "na",
+        detail: "receiving 128 kbps · muted by you",
+      });
+      // However long ago it last had sound
+      expect(verdict(mutedByMe(), { a: NOW - 10 * 60_000 })).toMatchObject({
+        status: "na",
+      });
+      // What does not depend on the sound is still a failure
+      expect(verdict(mutedByMe({ bitrate: 0 }))).toMatchObject({
+        status: "fail",
+        detail: "no bytes",
+      });
+      // Turned up again, it is judged by its sound as before
+      expect(
+        verdict(mutedByMe({ playbackVolume: 0.5 }), { a: NOW - 1000 }),
+      ).toMatchObject({ status: "pass" });
+      expect(verdict(mutedByMe({ playbackVolume: 0.5 }))).toMatchObject({
+        status: "fail",
+        detail: "no sound yet",
+      });
+    });
+
     it("has none for a member whose share is off, muted or without audio", () => {
       const none = (tracks: TrackRecord[]): boolean =>
         !evaluateChecks(tracks, context).some(

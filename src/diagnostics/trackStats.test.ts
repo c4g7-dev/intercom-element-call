@@ -140,6 +140,32 @@ describe("toTrackRecord", () => {
     expect(loud.record.contentHint).toBeUndefined();
   });
 
+  it("says what volume a received audio track is played at, where one was set", () => {
+    const theirs = {
+      participant: "@a:example.org:DEV",
+      local: false,
+      source: "screenShareAudio" as const,
+      kind: "audio" as const,
+      sid: "A",
+      muted: false,
+    };
+    expect(
+      toTrackRecord(theirs, { stats: [], playbackVolume: 0 }, 10_000).record
+        .playbackVolume,
+    ).toBe(0);
+    expect(
+      toTrackRecord(theirs, { stats: [] }, 10_000).record,
+    ).not.toHaveProperty("playbackVolume");
+    // What we send is not played here
+    expect(
+      toTrackRecord(
+        { ...theirs, local: true },
+        { stats: [], playbackVolume: 0 },
+        10_000,
+      ).record,
+    ).not.toHaveProperty("playbackVolume");
+  });
+
   it("maps a received screen share: decoder, freezes, loss over the interval, what was published", () => {
     const remote: TrackIdentity = {
       ...share,

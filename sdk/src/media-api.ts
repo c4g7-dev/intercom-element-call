@@ -150,6 +150,12 @@ export type MediaStreamStats =
 export interface TrackDiagnostics {
   /** Every entry of the statistics report of the track's sender or receiver. */
   stats: Record<string, unknown>[];
+  /**
+   * Remote audio: the volume the track was last asked to be played at here
+   * (0 is "muted for me"), where one was set. Says nothing about what is
+   * received: a browser stops measuring the level of audio it does not play.
+   */
+  playbackVolume?: number;
   /** The browser's track, as it is now. */
   track?: {
     contentHint?: string;
