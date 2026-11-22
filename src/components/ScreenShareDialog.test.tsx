@@ -228,6 +228,25 @@ describe("the share dialog's audio sources", () => {
     ]);
   });
 
+  it("keeps the mix while the mode is another, to come back to", async () => {
+    const user = userEvent.setup();
+    screenShareAudioSource.setValue("mix");
+    screenShareAudioMix.setValue([{ id: "mic", gain: 1.4, muted: false }]);
+    renderDialog(host());
+    const mode = screen.getByTestId("screenshare_audio_source");
+    await user.selectOptions(mode, "none");
+    expect(screen.getByTestId("screenshare_audio_sources")).toHaveAttribute(
+      "data-inactive",
+      "true",
+    );
+    await user.selectOptions(mode, "system");
+    await user.selectOptions(mode, "mix");
+    expect(screenShareAudioMix.getValue()).toEqual([
+      { id: "mic", gain: 1.4, muted: false },
+    ]);
+    expect(screen.getByRole("checkbox", { name: "Microphone" })).toBeChecked();
+  });
+
   it("reads the one source an older version stored as a mix of one", async () => {
     screenShareAudioSource.setValue("sink:virtual-music");
     renderDialog(host());

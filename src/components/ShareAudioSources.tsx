@@ -73,9 +73,10 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
   const shareAudio = useHostBridge().shareAudio;
 
   const mode = shareAudioMode(choice);
-  // What an older version stored as the one device is a mix of one
-  const mix =
-    choice === "mix" ? sanitizeMix(storedMix) : shareAudioMix(choice, []);
+  // What an older version stored as the one device is a mix of one. The mix
+  // is kept while the mode is another, to come back to
+  const legacy = mode === "mix" && choice !== "mix";
+  const mix = legacy ? shareAudioMix(choice, []) : sanitizeMix(storedMix);
   useEffect(() => {
     if (shareAudioMode(choice) === "mix" && choice !== "mix") {
       setStoredMix(shareAudioMix(choice, []));
@@ -110,7 +111,6 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
 
   const setMode = (value: ShareAudioMode): void => {
     diag("share_audio_choice", { mode: value, live });
-    if (value === "mix") setStoredMix(mix);
     setChoice(value);
   };
   const setMix = (next: ShareAudioMixSource[]): void => {
@@ -200,8 +200,7 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
       <fieldset className={styles.group} data-testid={testId}>
         <legend>{label}</legend>
         {rows.map((row) => {
-          const source =
-            mode === "mix" ? mix.find((s) => s.id === row.id) : undefined;
+          const source = mix.find((s) => s.id === row.id);
           const percent = Math.round((source?.gain ?? 1) * 100);
           const Icon = source?.muted ? VolumeOffSolidIcon : VolumeOnSolidIcon;
           return (
