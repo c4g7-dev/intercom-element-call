@@ -28,6 +28,9 @@ export interface TrackSupply {
 /** How long to wait before each new attempt at a publication that failed. */
 export const PUBLISH_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15000];
 
+/** How long one attempt may take; a permission prompt left open counts. */
+export const PUBLISH_TIMEOUT_MS = 30_000;
+
 /**
  * Whether the device itself refused: a denied permission, a missing or busy
  * device. Trying again would only ask the same question, so the switch flips
@@ -102,8 +105,19 @@ export function followMuteState(
     if (publishing) return true;
     publishing = true;
     cancelRetry();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      await supply.publish();
+      // A publication that never settles (a connection that never comes up)
+      // must not leave the switch waiting on it forever
+      await Promise.race([
+        supply.publish(),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () => reject(new Error("Timed out waiting for the publication")),
+            PUBLISH_TIMEOUT_MS,
+          );
+        }),
+      ]);
       attempts = 0;
       return true;
     } catch (e) {
@@ -125,6 +139,7 @@ export function followMuteState(
       retryTimer = setTimeout(retry, delay);
       return true;
     } finally {
+      clearTimeout(timeout);
       publishing = false;
     }
   };

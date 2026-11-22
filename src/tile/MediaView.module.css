@@ -56,6 +56,8 @@ Please see LICENSE in the repository root for full details.
 
 .media[data-background="solid"] .bg {
   background-color: var(--video-tile-background);
+  outline: var(--intercom-tile-border, none);
+  outline-offset: -1px;
 }
 
 .waves {
@@ -91,9 +93,11 @@ Please see LICENSE in the repository root for full details.
 }
 
 .speakingBorder {
-  background:
+  background: var(
+    --intercom-speaking-fill,
     radial-gradient(#0467dd, #0bc491),
-    linear-gradient(0deg, #0467dd 0%, #0bc491 100%);
+    linear-gradient(0deg, #0467dd 0%, #0bc491 100%)
+  );
   background-blend-mode: overlay, normal;
   outline: var(--cpd-border-width-4) solid var(--cpd-color-bg-canvas-default);
 
@@ -198,7 +202,7 @@ unconditionally select the container so we can use cqmin units */
   background-color: var(--cpd-color-bg-canvas-default);
   display: flex;
   align-items: center;
-  border-radius: var(--cpd-radius-pill-effect);
+  border-radius: var(--intercom-radius-control, var(--cpd-radius-pill-effect));
   user-select: none;
   overflow: hidden;
   box-shadow: var(--small-drop-shadow);
@@ -251,7 +255,7 @@ unconditionally select the container so we can use cqmin units */
 .fg > button {
   appearance: none;
   border: none;
-  border-radius: var(--cpd-radius-pill-effect);
+  border-radius: var(--intercom-radius-control, var(--cpd-radius-pill-effect));
   padding: var(--cpd-space-1x);
   background: var(--cpd-color-bg-action-primary-rest);
   box-shadow: var(--small-drop-shadow);

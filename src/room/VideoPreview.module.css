@@ -14,7 +14,7 @@ Please see LICENSE in the repository root for full details.
   block-size: 50cqh;
   aspect-ratio: 16 / 9;
   max-width: 100%;
-  border-radius: var(--cpd-space-4x);
+  border-radius: var(--intercom-radius-tile, var(--cpd-space-4x));
   position: relative;
   overflow: hidden;
 }

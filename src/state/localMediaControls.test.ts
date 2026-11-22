@@ -14,6 +14,7 @@ import {
   followMuteState,
   isDeviceRefusal,
   PUBLISH_RETRY_DELAYS_MS,
+  PUBLISH_TIMEOUT_MS,
 } from "./localMediaControls";
 import { type Handler } from "./MuteStates";
 import { ObservableScope } from "./ObservableScope";
@@ -125,6 +126,21 @@ describe("followMuteState", () => {
     });
     await vi.advanceTimersByTimeAsync(60_000);
     expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  test("treats a publication that never settles as a failed attempt", async () => {
+    const publish = vi
+      .fn<() => Promise<void>>()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValue(undefined);
+    const { handler, setEnabled } = setup(publish);
+
+    const result = handler()(true);
+    await vi.advanceTimersByTimeAsync(PUBLISH_TIMEOUT_MS);
+    await expect(result).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(PUBLISH_RETRY_DELAYS_MS[0]);
+    expect(publish).toHaveBeenCalledTimes(2);
+    expect(setEnabled).not.toHaveBeenCalled();
   });
 
   test("flips to muted at once when the device refuses", async () => {

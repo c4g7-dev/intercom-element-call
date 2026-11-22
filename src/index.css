@@ -14,6 +14,7 @@ and their fonts, where a host embedding the component supplies its own. The
 `compound` layers are ordered by base.css. */
 
 @import url("./base.css");
+@import url("./intercom.css");
 
 @import url("@fontsource/inter/400.css");
 @import url("@fontsource/inter/500.css");

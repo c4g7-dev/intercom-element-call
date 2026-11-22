@@ -1,0 +1,47 @@
+/*
+Copyright 2026 Element Creations Ltd.
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+/* InterCom's look: flat surfaces, one radius, no shadows or decorative
+gradients. Everything here is a token: the stylesheets that draw the tiles and
+controls read these with the upstream value as their fallback, so that deleting
+this file gives the upstream look back and a rebase touches one line per rule. */
+
+:root,
+[class*="cpd-theme-"] {
+  /* One radius for tiles, one for the controls on them */
+  --intercom-radius-tile: 10px;
+  --intercom-radius-control: 8px;
+
+  /* Depth is drawn with borders, not shadows */
+  --small-drop-shadow: none;
+  --big-drop-shadow: none;
+  --subtle-drop-shadow: none;
+  --intercom-tile-border: 1px solid var(--cpd-color-border-disabled);
+
+  /* A speaker is marked with one colour, not a gradient */
+  --intercom-speaking-fill: var(--cpd-color-border-accent);
+  --intercom-hand-raised-fill: var(--cpd-color-yellow-900);
+
+  /* The scrims behind the header and footer fade to the canvas colour as
+  upstream's do, but over a shorter distance */
+  --intercom-scrim-start: 40%;
+}
+
+/* A clean dark default: neutral rather than blue-tinted surfaces */
+.cpd-theme-dark,
+.cpd-theme-dark[class*="cpd-theme-"] {
+  --cpd-color-bg-canvas-default: #0f1012;
+  --cpd-color-bg-subtle-secondary: #17181b;
+  --cpd-color-bg-subtle-primary: #1f2024;
+  --video-tile-background: #17181b;
+  --stopgap-background-85: rgba(15, 16, 18, 0.9);
+}
+
+/* No decorative page gradient */
+[data-element-call-root][data-background="gradient"]::before {
+  background-image: none !important;
+}

@@ -9,7 +9,7 @@ Please see LICENSE in the repository root for full details.
   block-size: 100%;
   inline-size: 100%;
   display: flex;
-  border-radius: var(--cpd-space-6x);
+  border-radius: var(--intercom-radius-tile, var(--cpd-space-6x));
   box-shadow: var(--draggable-shadow);
   contain: strict;
   overflow-x: auto;
