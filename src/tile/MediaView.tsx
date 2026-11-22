@@ -35,6 +35,9 @@ import { RTCConnectionStats } from "../RTCConnectionStats";
 import videoPlaceholder from "../graphics/video-placeholder.gif";
 import { autoVideoFit } from "../utils/videoFit";
 import { type Transport } from "matrix-js-sdk/lib/matrixrtc";
+import { type VolumeControls } from "../state/VolumeControls";
+import { TileActions, useFullscreen } from "./TileActions";
+import { useMergedRefs } from "../useMergedRefs";
 
 interface Props extends ComponentProps<typeof animated.div> {
   className?: string;
@@ -77,6 +80,11 @@ interface Props extends ComponentProps<typeof animated.div> {
    * otherwise changes.
    */
   setVideoAspectRatio?: (ratio: number) => void;
+  /**
+   * The volume of what is heard from this tile (a remote member's voice, a
+   * remote screen share's audio), for a control in the tile itself.
+   */
+  volumeControls?: VolumeControls;
 }
 
 export const MediaView: FC<Props> = ({
@@ -110,8 +118,13 @@ export const MediaView: FC<Props> = ({
   rtcBackendIdentity,
   transport,
   setVideoAspectRatio: setTheirVideoAspectRatio,
+  volumeControls,
   ...props
 }) => {
+  const tileElement = useRef<HTMLDivElement | null>(null);
+  const mergedRef = useMergedRefs(tileElement, ref);
+  const [fullscreen, toggleFullscreen] = useFullscreen(tileElement);
+  const shownVideo = video && videoEnabled ? video : undefined;
   const { t } = useTranslation();
   const [handRaiseTimerVisible] = useSetting(showHandRaisedTimer);
   const [showConnectionStats] = useSetting(showConnectionStatsSetting);
@@ -166,11 +179,13 @@ export const MediaView: FC<Props> = ({
 
   return (
     <animated.div
-      className={classNames(styles.media, className, {
+      className={classNames(styles.media, className, "intercom-tile", {
         [styles.mirror]: mirror,
       })}
       style={style}
-      ref={ref}
+      ref={mergedRef}
+      data-fullscreen={fullscreen}
+      onDoubleClick={shownVideo ? toggleFullscreen : undefined}
       data-testid="videoTile"
       data-video-enabled={video && videoEnabled}
       data-video-fit={
@@ -281,6 +296,16 @@ export const MediaView: FC<Props> = ({
         )}
         {primaryButton}
       </div>
+      <TileActions
+        video={shownVideo}
+        popoutId={`${userId}:${video?.source ?? "camera"}`}
+        displayName={displayName}
+        mirror={mirror}
+        volume={volumeControls}
+        fullscreen={fullscreen}
+        toggleFullscreen={toggleFullscreen}
+        focusable={focusable}
+      />
     </animated.div>
   );
 };

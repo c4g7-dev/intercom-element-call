@@ -18,6 +18,8 @@ import {
   ParticipantEvent,
   RemoteAudioTrack,
   RemoteTrack,
+  RemoteVideoTrack,
+  type ElementInfo,
   type Room as LivekitRoom,
   RoomEvent,
   Track,
@@ -25,6 +27,7 @@ import {
   type TrackPublication,
 } from "livekit-client";
 import {
+  BehaviorSubject,
   combineLatest,
   distinctUntilChanged,
   fromEvent,
@@ -88,17 +91,51 @@ export function createLivekitMediaTrack(
   let volume: number | undefined;
   const applyAudioSettings = (track: Track | undefined): void => {
     if (!(track instanceof RemoteAudioTrack)) return;
-    track.setAudioContext(audioContext);
+    // An element plays no louder than 1. Above that the track is played
+    // through a gain node instead, on a context of our own where the host
+    // gave none; at or below, it stays on the element, which is what the
+    // browser's echo canceller and output device selection know best.
+    const context =
+      audioContext ??
+      (volume !== undefined && volume > 1 ? boostContext(room) : undefined);
+    track.setAudioContext(context);
     track.setWebAudioPlugins(audioPlugins);
-    if (volume !== undefined) track.setVolume(volume);
+    if (volume !== undefined)
+      track.setVolume(context ? volume : Math.min(volume, 1));
+  };
+
+  // Requests for the best quality, as one element of the size of the largest
+  // screen there could be: LiveKit's adaptive stream picks the layer by the
+  // largest visible element a track is attached to
+  let highQualityRequests = 0;
+  const highQualityElement: ElementInfo = {
+    element: {},
+    width: () => 7680,
+    height: () => 4320,
+    visible: true,
+    visibilityChangedAt: undefined,
+    pictureInPicture: false,
+    observe: () => {},
+    stopObserving: () => {},
+  };
+  const applyHighQuality = (track: Track | undefined, on: boolean): void => {
+    if (!(track instanceof RemoteVideoTrack)) return;
+    try {
+      if (on) track.observeElementInfo(highQualityElement);
+      else track.stopObservingElementInfo(highQualityElement);
+    } catch {
+      // A track that is not adaptive has nothing to pin
+    }
   };
 
   let current = track$.value;
   track$.pipe(scope.bind()).subscribe((track) => {
     for (const element of attached) current?.detach(element);
+    if (highQualityRequests > 0) applyHighQuality(current, false);
     current = track;
     applyAudioSettings(track);
     for (const element of attached) track?.attach(element);
+    if (highQualityRequests > 0) applyHighQuality(track, true);
   });
   scope.onEnd(() => {
     for (const element of attached) current?.detach(element);
@@ -176,7 +213,69 @@ export function createLivekitMediaTrack(
       },
     };
 
-  return { ...base, kind: "video" };
+  // Not a scope behavior: this one says so when the publication is gone, by
+  // going back to undefined as the scope ends
+  const mediaStreamTrack$ = new BehaviorSubject<MediaStreamTrack | undefined>(
+    current?.mediaStreamTrack,
+  );
+  track$
+    .pipe(
+      switchMap((track) =>
+        track === undefined
+          ? of(undefined)
+          : !(track instanceof LocalTrack)
+            ? of(track.mediaStreamTrack)
+            : // A local track is replaced on a restart (another device, a processor)
+              merge(
+                fromEvent(track, TrackEvent.Restarted),
+                fromEvent(track, TrackEvent.TrackProcessorUpdate),
+              ).pipe(
+                startWith(null),
+                map(() => track.mediaStreamTrack),
+              ),
+      ),
+      distinctUntilChanged(),
+      scope.bind(),
+    )
+    .subscribe((track) => mediaStreamTrack$.next(track));
+  scope.onEnd(() => mediaStreamTrack$.next(undefined));
+
+  return {
+    ...base,
+    kind: "video",
+    mediaStreamTrack$,
+    requestHighQuality: () => {
+      if (highQualityRequests++ === 0) applyHighQuality(current, true);
+      let released = false;
+      return (): void => {
+        if (released) return;
+        released = true;
+        if (--highQualityRequests === 0) applyHighQuality(current, false);
+      };
+    },
+  };
+}
+
+let sharedBoostContext: AudioContext | undefined;
+/**
+ * The context tracks louder than 1 are played on: one for the page, made on
+ * first use (by then the user has interacted with the page, which a context
+ * needs to start) and sent to the room's output device where it has one.
+ */
+function boostContext(room: LivekitRoom): AudioContext | undefined {
+  if (typeof AudioContext === "undefined") return undefined;
+  if (sharedBoostContext === undefined || sharedBoostContext.state === "closed")
+    sharedBoostContext = new AudioContext({ latencyHint: "interactive" });
+  const context = sharedBoostContext;
+  if (context.state === "suspended") context.resume().catch(() => undefined);
+  const sink = room.getActiveDevice("audiooutput");
+  const withSink = context as AudioContext & {
+    sinkId?: string;
+    setSinkId?: (id: string) => Promise<void>;
+  };
+  if (sink && sink !== "default" && withSink.sinkId !== sink)
+    withSink.setSinkId?.(sink).catch(() => undefined);
+  return context;
 }
 
 /**
@@ -252,6 +351,29 @@ export function createLocalLivekitMediaTrack(
           facingModeOf(sourceTrack(track)) === "user" ? "environment" : "user",
       });
       return track.mediaStreamTrack.getSettings().deviceId;
+    },
+    setEncodingLimits: async ({ maxBitrate, maxFramerate }) => {
+      const sender = videoTrack()?.sender;
+      if (!sender) return false;
+      const params = sender.getParameters();
+      if (!params.encodings?.length) return false;
+      // The full layer is the last one; a screen share has only the one
+      const encoding = params.encodings[params.encodings.length - 1];
+      if (
+        (maxBitrate === undefined || encoding.maxBitrate === maxBitrate) &&
+        (maxFramerate === undefined || encoding.maxFramerate === maxFramerate)
+      )
+        return true;
+      if (maxBitrate !== undefined) encoding.maxBitrate = maxBitrate;
+      if (maxFramerate !== undefined) encoding.maxFramerate = maxFramerate;
+      await sender.setParameters(params);
+      return true;
+    },
+    dimensions: () => {
+      const settings = videoTrack()?.mediaStreamTrack.getSettings();
+      return settings?.width && settings.height
+        ? { width: settings.width, height: settings.height }
+        : undefined;
     },
     setProcessor: async (processor) => {
       const track = videoTrack();

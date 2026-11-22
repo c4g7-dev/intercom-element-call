@@ -40,6 +40,10 @@ import {
 
 import styles from "./GridTile.module.css";
 import { Slider } from "../Slider";
+import {
+  MAX_PLAYBACK_VOLUME,
+  type VolumeControls,
+} from "../state/VolumeControls";
 import { MediaView } from "./MediaView";
 import { useLatest } from "../useLatest";
 import { type GridTileViewModel } from "../state/TileViewModel";
@@ -105,6 +109,7 @@ interface UserMediaTileProps extends TileProps {
   waitingForMedia?: boolean;
   primaryButton?: ReactNode;
   transport: Transport | undefined;
+  volumeControls?: VolumeControls;
 }
 
 /**
@@ -375,6 +380,7 @@ const RemoteUserMediaTile: FC<RemoteUserMediaTileProps> = ({
       vm={vm}
       waitingForMedia={waitingForMedia}
       playbackMuted={playbackMuted}
+      volumeControls={vm}
       mirror={false}
       menuStart={
         <>
@@ -393,7 +399,7 @@ const RemoteUserMediaTile: FC<RemoteUserMediaTileProps> = ({
               onValueChange={vm.adjustPlaybackVolume}
               onValueCommit={vm.commitPlaybackVolume}
               min={0}
-              max={1}
+              max={MAX_PLAYBACK_VOLUME}
               step={0.01}
             />
           </MenuItem>

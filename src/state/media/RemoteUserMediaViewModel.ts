@@ -58,6 +58,7 @@ export function createRemoteUserMedia(
     ...baseUserMedia,
     ...createVolumeControls(scope, {
       pretendToBeDisconnected$,
+      persistKey: `voice:${inputs.userId}`,
       sink$: scope.behavior(
         trackBySource$(scope, inputs.member.tracks$, "microphone").pipe(
           map((track) => (volume: number) => track?.setVolume(volume)),

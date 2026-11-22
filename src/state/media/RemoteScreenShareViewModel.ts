@@ -50,6 +50,7 @@ export function createRemoteScreenShare(
     ...createBaseScreenShare(scope, inputs),
     ...createVolumeControls(scope, {
       pretendToBeDisconnected$,
+      persistKey: `screen:${inputs.userId}`,
       sink$: scope.behavior(
         audio$.pipe(
           map((track) => (volume: number) => track?.setVolume(volume)),

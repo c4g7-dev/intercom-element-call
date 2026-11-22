@@ -50,6 +50,10 @@ import { type ScreenShareViewModel } from "../state/media/ScreenShareViewModel";
 import { type RemoteScreenShareViewModel } from "../state/media/RemoteScreenShareViewModel";
 import { type MediaViewModel } from "../state/media/MediaViewModel";
 import { Slider } from "../Slider";
+import {
+  MAX_PLAYBACK_VOLUME,
+  type VolumeControls,
+} from "../state/VolumeControls";
 import { platform } from "../Platform";
 import { type RingingMediaViewModel } from "../state/media/RingingMediaViewModel";
 import { RingingStatus } from "./RingingStatus";
@@ -107,7 +111,12 @@ const SpotlightRemoteUserMediaItem: FC<SpotlightRemoteUserMediaItemProps> = ({
 }) => {
   const waitingForMedia = useBehavior(vm.waitingForMedia$);
   return (
-    <MediaView waitingForMedia={waitingForMedia} mirror={false} {...props} />
+    <MediaView
+      waitingForMedia={waitingForMedia}
+      mirror={false}
+      volumeControls={vm}
+      {...props}
+    />
   );
 };
 
@@ -146,6 +155,7 @@ SpotlightUserMediaItem.displayName = "SpotlightUserMediaItem";
 interface SpotlightScreenShareItemProps extends SpotlightMemberMediaItemBaseProps {
   vm: ScreenShareViewModel;
   videoEnabled: boolean;
+  volumeControls?: VolumeControls;
 }
 
 const SpotlightScreenShareItem: FC<SpotlightScreenShareItemProps> = ({
@@ -163,8 +173,15 @@ const SpotlightRemoteScreenShareItem: FC<
   SpotlightRemoteScreenShareItemProps
 > = ({ vm, ...props }) => {
   const videoEnabled = useBehavior(vm.videoEnabled$);
+  const audioEnabled = useBehavior(vm.audioEnabled$);
   return (
-    <SpotlightScreenShareItem vm={vm} videoEnabled={videoEnabled} {...props} />
+    <SpotlightScreenShareItem
+      vm={vm}
+      videoEnabled={videoEnabled}
+      // A share without sound has nothing to turn down
+      volumeControls={audioEnabled ? vm : undefined}
+      {...props}
+    />
   );
 };
 
@@ -369,7 +386,7 @@ const ScreenShareVolumeButton: FC<ScreenShareVolumeButtonProps> = ({ vm }) => {
             label={t("video_tile.volume")}
             value={playbackVolume}
             min={0}
-            max={1}
+            max={MAX_PLAYBACK_VOLUME}
             step={0.01}
             onValueChange={onVolumeChange}
             onValueCommit={onVolumeCommit}

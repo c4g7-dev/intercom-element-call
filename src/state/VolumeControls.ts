@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { combineLatest, map, merge, of, Subject, switchMap } from "rxjs";
+import { combineLatest, map, merge, of, Subject, switchMap, tap } from "rxjs";
 
 import { type Behavior } from "./Behavior";
 import { type ObservableScope } from "./ObservableScope";
@@ -35,6 +35,55 @@ interface VolumeControlsInputs {
    * requested volume.
    */
   sink$: Behavior<(volume: number) => void>;
+  /**
+   * Where the volume is kept between calls: one key per thing listened to
+   * (a member's voice, a member's screen share). Not kept without one.
+   */
+  persistKey?: string;
+}
+
+/** The loudest a track can be played: twice as loud as it was sent. */
+export const MAX_PLAYBACK_VOLUME = 2;
+
+const STORAGE_KEY = "intercom-playback-volumes";
+
+interface StoredVolume {
+  volume: number;
+  committedVolume: number;
+}
+
+function readStoredVolumes(): Record<string, StoredVolume> {
+  try {
+    const stored: unknown = JSON.parse(
+      localStorage.getItem(STORAGE_KEY) ?? "{}",
+    );
+    return typeof stored === "object" && stored !== null
+      ? (stored as Record<string, StoredVolume>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function storedVolume(key: string | undefined): StoredVolume {
+  const stored = key === undefined ? undefined : readStoredVolumes()[key];
+  const valid = (v: unknown): v is number =>
+    typeof v === "number" && v >= 0 && v <= MAX_PLAYBACK_VOLUME;
+  return stored && valid(stored.volume) && valid(stored.committedVolume)
+    ? { volume: stored.volume, committedVolume: stored.committedVolume || 1 }
+    : { volume: 1, committedVolume: 1 };
+}
+
+function storeVolume(key: string, state: StoredVolume): void {
+  try {
+    const all = readStoredVolumes();
+    // The default is not worth an entry
+    if (state.volume === 1 && state.committedVolume === 1) delete all[key];
+    else all[key] = state;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch {
+    // Storage that is full or forbidden only costs the memory
+  }
 }
 
 /**
@@ -43,15 +92,17 @@ interface VolumeControlsInputs {
  */
 export function createVolumeControls(
   scope: ObservableScope,
-  { pretendToBeDisconnected$, sink$ }: VolumeControlsInputs,
+  { pretendToBeDisconnected$, sink$, persistKey }: VolumeControlsInputs,
 ): VolumeControls {
+  const initial = storedVolume(persistKey);
+  let pendingStore: StoredVolume | undefined;
   const toggleMuted$ = new Subject<"toggle mute">();
   const adjustVolume$ = new Subject<number>();
   const commitVolume$ = new Subject<"commit">();
 
   const playbackVolume$ = scope.behavior<number>(
     merge(toggleMuted$, adjustVolume$, commitVolume$).pipe(
-      accumulate({ volume: 1, committedVolume: 1 }, (state, event) => {
+      accumulate(initial, (state, event) => {
         switch (event) {
           case "toggle mute":
             return {
@@ -72,9 +123,22 @@ export function createVolumeControls(
             return { ...state, volume: event };
         }
       }),
+      // Kept once the user lets go, not for every step of a drag
+      tap({
+        next: (state) => {
+          if (persistKey !== undefined && state !== initial)
+            pendingStore = state;
+        },
+      }),
       map(({ volume }) => volume),
     ),
   );
+  merge(toggleMuted$, commitVolume$)
+    .pipe(scope.bind())
+    .subscribe(() => {
+      if (persistKey !== undefined && pendingStore !== undefined)
+        storeVolume(persistKey, pendingStore);
+    });
 
   // Sync the requested volume with the audio playback module
   combineLatest([
