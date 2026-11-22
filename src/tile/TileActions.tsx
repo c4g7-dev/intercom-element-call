@@ -25,6 +25,7 @@ import {
 import styles from "./TileActions.module.css";
 import { useBehavior } from "../useBehavior";
 import {
+  formatPlaybackVolume,
   MAX_PLAYBACK_VOLUME,
   type VolumeControls,
 } from "../state/VolumeControls";
@@ -102,7 +103,7 @@ const TileVolume: FC<VolumeProps> = ({ volume, tabIndex }) => {
       <input
         type="range"
         aria-label={t("video_tile.volume")}
-        title={`${percent}%`}
+        title={formatPlaybackVolume(value)}
         min={0}
         max={MAX_PLAYBACK_VOLUME * 100}
         step={1}
@@ -115,7 +116,7 @@ const TileVolume: FC<VolumeProps> = ({ volume, tabIndex }) => {
         onBlur={volume.commitPlaybackVolume}
         tabIndex={tabIndex}
       />
-      <span className={styles.percent}>{percent}%</span>
+      <span className={styles.percent}>{formatPlaybackVolume(value)}</span>
     </div>
   );
 };

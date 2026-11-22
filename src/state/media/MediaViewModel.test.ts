@@ -23,6 +23,7 @@ import {
 } from "../../utils/test";
 import { showConnectionStats } from "../../settings/settings";
 import { EncryptionStatus } from "./MemberMediaViewModel";
+import { playbackGain } from "../VolumeControls";
 
 const platformMock = vi.hoisted(() => vi.fn(() => "desktop"));
 vi.mock("../../Platform", () => ({
@@ -50,22 +51,22 @@ test("control a participant's volume", () => {
         vm.adjustPlaybackVolume(0.6);
         vm.adjustPlaybackVolume(0.8);
         vm.commitPlaybackVolume();
-        expect(setVolume).toHaveBeenCalledWith(0.6);
-        expect(setVolume).toHaveBeenLastCalledWith(0.8);
+        expect(setVolume).toHaveBeenCalledWith(playbackGain(0.6));
+        expect(setVolume).toHaveBeenLastCalledWith(playbackGain(0.8));
       },
       c() {
         // Try muting by dragging the slider back down
         vm.adjustPlaybackVolume(0.2);
         vm.adjustPlaybackVolume(0);
         vm.commitPlaybackVolume();
-        expect(setVolume).toHaveBeenCalledWith(0.2);
+        expect(setVolume).toHaveBeenCalledWith(playbackGain(0.2));
         expect(setVolume).toHaveBeenLastCalledWith(0);
       },
       d() {
         // Try unmuting by toggling
         vm.togglePlaybackMuted();
         // The volume should return to the last non-zero committed volume
-        expect(setVolume).toHaveBeenLastCalledWith(0.8);
+        expect(setVolume).toHaveBeenLastCalledWith(playbackGain(0.8));
       },
     });
     expectObservable(vm.playbackVolume$).toBe("ab(cd)(ef)g", {
@@ -95,19 +96,19 @@ test("control a participant's screen share volume", () => {
         vm.adjustPlaybackVolume(0.6);
         vm.adjustPlaybackVolume(0.8);
         vm.commitPlaybackVolume();
-        expect(setVolume).toHaveBeenCalledWith(0.6);
-        expect(setVolume).toHaveBeenLastCalledWith(0.8);
+        expect(setVolume).toHaveBeenCalledWith(playbackGain(0.6));
+        expect(setVolume).toHaveBeenLastCalledWith(playbackGain(0.8));
       },
       c() {
         vm.adjustPlaybackVolume(0.2);
         vm.adjustPlaybackVolume(0);
         vm.commitPlaybackVolume();
-        expect(setVolume).toHaveBeenCalledWith(0.2);
+        expect(setVolume).toHaveBeenCalledWith(playbackGain(0.2));
         expect(setVolume).toHaveBeenLastCalledWith(0);
       },
       d() {
         vm.togglePlaybackMuted();
-        expect(setVolume).toHaveBeenLastCalledWith(0.8);
+        expect(setVolume).toHaveBeenLastCalledWith(playbackGain(0.8));
       },
     });
     expectObservable(vm.playbackVolume$).toBe("ab(cd)(ef)g", {

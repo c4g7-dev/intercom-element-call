@@ -41,6 +41,7 @@ import {
 import styles from "./GridTile.module.css";
 import { Slider } from "../Slider";
 import {
+  formatPlaybackVolume,
   MAX_PLAYBACK_VOLUME,
   type VolumeControls,
 } from "../state/VolumeControls";
@@ -400,6 +401,7 @@ const RemoteUserMediaTile: FC<RemoteUserMediaTileProps> = ({
               onValueCommit={vm.commitPlaybackVolume}
               min={0}
               max={MAX_PLAYBACK_VOLUME}
+              tooltipFormatter={formatPlaybackVolume}
               step={0.01}
             />
           </MenuItem>

@@ -12,6 +12,7 @@ import { logger } from "matrix-js-sdk/lib/logger";
 import { type Behavior } from "../state/Behavior";
 import { diag } from "../diagnostics/diag";
 import {
+  formatPlaybackVolume,
   MAX_PLAYBACK_VOLUME,
   type VolumeControls,
 } from "../state/VolumeControls";
@@ -154,7 +155,7 @@ export function openPopout({
       volume.playbackVolume$.subscribe((v) => {
         const percent = Math.round(v * 100);
         slider.value = String(percent);
-        output.textContent = `${percent}%`;
+        output.textContent = formatPlaybackVolume(v);
         mute.setAttribute("aria-pressed", String(v === 0));
       }),
     );

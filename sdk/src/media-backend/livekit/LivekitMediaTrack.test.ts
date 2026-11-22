@@ -30,6 +30,7 @@ import {
   createLivekitMediaTrack,
   createLocalLivekitMediaTrack,
   elementVolume,
+  LIMITER_SETTINGS,
 } from "./LivekitMediaTrack";
 
 describe("createLivekitMediaTrack", () => {
@@ -128,11 +129,16 @@ describe("createLivekitMediaTrack", () => {
      * LiveKit's RemoteAudioTrack as far as volume goes: it remembers the last
      * volume, writes it to the elements off a context and to a gain node on
      * one, and gives it back to the elements when the context goes. The
-     * element refuses anything outside [0, 1], as a real one does.
+     * element refuses anything outside [0, 1], as a real one does. On a
+     * context it builds its graph anew for every change of context or
+     * plugins, which `connects` counts, and refuses plugins of another one.
      */
     function volumeTrack(): FakeTrack & {
       element: { volume: number; muted: boolean };
       gain: number | undefined;
+      context: unknown;
+      plugins: FakeNode[];
+      connects: number;
     } {
       let elementVolume = 1;
       const element = {
@@ -149,70 +155,237 @@ describe("createLivekitMediaTrack", () => {
           elementVolume = v;
         },
       };
-      let context: unknown;
       let remembered: number | undefined;
       const track = Object.assign(fakeTrack(), {
         element,
         gain: undefined as number | undefined,
+        context: undefined as unknown,
+        plugins: [] as FakeNode[],
+        connects: 0,
       });
+      const connect = (): void => {
+        for (const node of track.plugins)
+          if (node.context !== track.context)
+            throw new DOMException(
+              "cannot connect to an AudioNode belonging to a different audio context",
+              "InvalidAccessError",
+            );
+        track.connects++;
+        track.gain = remembered ?? 1;
+      };
       track.setVolume.mockImplementation((v: number) => {
-        if (context) track.gain = v;
+        if (track.context) track.gain = v;
         else element.volume = v;
         remembered = v;
       });
       track.setAudioContext.mockImplementation((ctx: unknown) => {
-        if (context === ctx) return;
-        context = ctx;
+        if (track.context === ctx) return;
+        track.context = ctx;
         if (ctx) {
           element.volume = 0;
           element.muted = true;
-          track.gain = remembered ?? 1;
+          connect();
         } else {
           track.gain = undefined;
           element.muted = false;
           element.volume = remembered ?? 1;
         }
       });
+      track.setWebAudioPlugins.mockImplementation((nodes: FakeNode[]) => {
+        track.plugins = nodes;
+        if (track.context) connect();
+      });
       return track;
     }
 
-    function audioTrack(livekitTrack: FakeTrack): AudioMediaTrack {
-      const { participant, publication, room } = fakes({
-        kind: Track.Kind.Audio,
-        track: livekitTrack,
+    interface FakeParam {
+      value: number;
+      target: number | undefined;
+      timeConstant: number | undefined;
+      cancelScheduledValues: () => void;
+      setTargetAtTime: (target: number, at: number, constant: number) => void;
+    }
+    interface FakeNode {
+      kind: "gain" | "limiter";
+      context: unknown;
+      gain: FakeParam;
+      threshold: FakeParam;
+      knee: FakeParam;
+      ratio: FakeParam;
+      attack: FakeParam;
+      release: FakeParam;
+    }
+    function fakeParam(value: number): FakeParam {
+      const param: FakeParam = {
+        value,
+        target: undefined,
+        timeConstant: undefined,
+        cancelScheduledValues: () => {},
+        setTargetAtTime: (target, _at, constant) => {
+          param.target = target;
+          param.timeConstant = constant;
+        },
+      };
+      return param;
+    }
+    function fakeNode(kind: FakeNode["kind"], context: unknown): FakeNode {
+      return {
+        kind,
+        context,
+        gain: fakeParam(1),
+        threshold: fakeParam(-24),
+        knee: fakeParam(30),
+        ratio: fakeParam(12),
+        attack: fakeParam(0.003),
+        release: fakeParam(0.25),
+      };
+    }
+    class FakeAudioContext {
+      public static made: FakeAudioContext[] = [];
+      public state = "running";
+      public currentTime = 0;
+      public sinkId = "";
+      public setSinkId = vi.fn(async (id: string) => {
+        this.sinkId = id;
+        return Promise.resolve();
       });
+      public constructor() {
+        FakeAudioContext.made.push(this);
+      }
+      public createGain(): FakeNode {
+        return fakeNode("gain", this);
+      }
+      public createDynamicsCompressor(): FakeNode {
+        return fakeNode("limiter", this);
+      }
+    }
+
+    let outputDevice: string | undefined;
+    let room: LivekitRoom;
+    function audioTrack(livekitTrack: FakeTrack): AudioMediaTrack {
+      const f = fakes({ kind: Track.Kind.Audio, track: livekitTrack });
+      room = f.room;
       (
-        room as unknown as { getActiveDevice: () => undefined }
-      ).getActiveDevice = (): undefined => undefined;
+        room as unknown as { getActiveDevice: () => string | undefined }
+      ).getActiveDevice = (): string | undefined => outputDevice;
       return createLivekitMediaTrack(
         scope,
-        participant,
-        publication as unknown as TrackPublication,
+        f.participant,
+        f.publication as unknown as TrackPublication,
         room,
       ) as AudioMediaTrack;
     }
+    const boostGain = (t: { plugins: FakeNode[] }): FakeNode | undefined =>
+      t.plugins.find((n) => n.kind === "gain");
+    const limiter = (t: { plugins: FakeNode[] }): FakeNode | undefined =>
+      t.plugins.find((n) => n.kind === "limiter");
 
     beforeEach(() => {
-      vi.stubGlobal(
-        "AudioContext",
-        class {
-          public state = "running";
-        },
-      );
+      outputDevice = undefined;
+      FakeAudioContext.made = [];
+      vi.stubGlobal("AudioContext", FakeAudioContext);
     });
     afterEach(() => {
       vi.unstubAllGlobals();
     });
 
-    it("is played through a gain node, the element silent", () => {
+    it("is played through a gain node of its own, the element silent", () => {
       const livekitTrack = volumeTrack();
       const track = audioTrack(livekitTrack);
       track.setVolume(1.29);
-      expect(livekitTrack.gain).toBe(1.29);
+      expect(boostGain(livekitTrack)?.gain.target).toBe(1.29);
+      // LiveKit's gain node comes after the limiter and adds nothing
+      expect(livekitTrack.gain).toBe(1);
       expect(livekitTrack.element.volume).toBe(0);
-      track.setVolume(2);
-      expect(livekitTrack.gain).toBe(2);
+      track.setVolume(4);
+      expect(boostGain(livekitTrack)?.gain.target).toBe(4);
+      expect(livekitTrack.gain).toBe(1);
       expect(livekitTrack.element.volume).toBe(0);
+    });
+
+    it("has a limiter right behind the gain, and only above 1", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      track.setVolume(0.8);
+      expect(livekitTrack.plugins).toEqual([]);
+      expect(livekitTrack.context).toBeUndefined();
+      track.setVolume(1);
+      expect(livekitTrack.plugins).toEqual([]);
+      expect(livekitTrack.context).toBeUndefined();
+      expect(FakeAudioContext.made).toHaveLength(0);
+
+      track.setVolume(2.5);
+      expect(livekitTrack.plugins.map((n) => n.kind)).toEqual([
+        "gain",
+        "limiter",
+      ]);
+      const node = limiter(livekitTrack)!;
+      expect(node.threshold.value).toBe(LIMITER_SETTINGS.threshold);
+      expect(node.knee.value).toBe(LIMITER_SETTINGS.knee);
+      expect(node.ratio.value).toBe(20);
+      expect(node.attack.value).toBe(0.002);
+      expect(node.release.value).toBe(0.1);
+
+      track.setVolume(0.9);
+      expect(livekitTrack.plugins).toEqual([]);
+      expect(livekitTrack.context).toBeUndefined();
+      expect(livekitTrack.element.volume).toBe(0.9);
+    });
+
+    it("follows a drag with ramps on the same graph, without building it again", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      track.setVolume(1.1);
+      expect(livekitTrack.connects).toBe(1);
+      const node = boostGain(livekitTrack)!;
+      for (const v of [1.2, 1.7, 2.4, 3.98, 3, 1.05]) {
+        track.setVolume(v);
+        expect(node.gain.target).toBe(v);
+        expect(node.gain.timeConstant).toBeGreaterThan(0);
+        expect(node.gain.timeConstant).toBeLessThanOrEqual(0.05);
+      }
+      expect(boostGain(livekitTrack)).toBe(node);
+      expect(livekitTrack.connects).toBe(1);
+    });
+
+    it("does not build the graph again for a volume at or below 1 either", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      for (const v of [0.2, 0.5, 1, 0]) track.setVolume(v);
+      expect(livekitTrack.setWebAudioPlugins).toHaveBeenCalledTimes(1);
+      expect(livekitTrack.connects).toBe(0);
+    });
+
+    it("plays on the room's output device, and follows it", () => {
+      outputDevice = "headset";
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      track.setVolume(1.5);
+      const context = livekitTrack.context as FakeAudioContext;
+      expect(context.setSinkId).toHaveBeenLastCalledWith("headset");
+
+      outputDevice = "speakers";
+      (room as unknown as EventEmitter).emit(
+        RoomEvent.ActiveDeviceChanged,
+        "audiooutput",
+        "speakers",
+      );
+      expect(context.setSinkId).toHaveBeenLastCalledWith("speakers");
+      outputDevice = "default";
+      (room as unknown as EventEmitter).emit(
+        RoomEvent.ActiveDeviceChanged,
+        "audiooutput",
+        "default",
+      );
+      expect(context.setSinkId).toHaveBeenLastCalledWith("");
+      // Not for a microphone
+      context.setSinkId.mockClear();
+      (room as unknown as EventEmitter).emit(
+        RoomEvent.ActiveDeviceChanged,
+        "audioinput",
+        "mic",
+      );
+      expect(context.setSinkId).not.toHaveBeenCalled();
     });
 
     it.each([1, 0.4, 0])(
@@ -231,7 +404,7 @@ describe("createLivekitMediaTrack", () => {
     it("survives the slider being dragged up and down across 1", () => {
       const livekitTrack = volumeTrack();
       const track = audioTrack(livekitTrack);
-      for (const v of [0.8, 1.1, 1.29, 2, 0.99, 1.01, 0, 1.5, 1]) {
+      for (const v of [0.8, 1.1, 1.29, 4, 0.99, 1.01, 0, 1.5, 1]) {
         expect(() => track.setVolume(v)).not.toThrow();
         expect(livekitTrack.element.volume).toBeGreaterThanOrEqual(0);
         expect(livekitTrack.element.volume).toBeLessThanOrEqual(1);
@@ -239,16 +412,40 @@ describe("createLivekitMediaTrack", () => {
       expect(livekitTrack.element.volume).toBe(1);
     });
 
-    it("stays within the element's range when the host takes its context away", () => {
+    it("boosts on the host's context behind its plugins, and on its own when that goes", () => {
       const livekitTrack = volumeTrack();
       const track = audioTrack(livekitTrack);
-      const hostContext = {} as AudioContext;
-      track.setAudioContext(hostContext, []);
+      const hostContext = new FakeAudioContext();
+      const pan = fakeNode("gain", hostContext);
+      track.setAudioContext(
+        hostContext as unknown as AudioContext,
+        [pan] as unknown as AudioNode[],
+      );
+      track.setVolume(0.5);
+      expect(livekitTrack.plugins).toEqual([pan]);
+      expect(livekitTrack.gain).toBe(0.5);
+
       track.setVolume(1.6);
-      expect(livekitTrack.gain).toBe(1.6);
-      // Still louder than 1: the context of our own takes over
+      expect(livekitTrack.context).toBe(hostContext);
+      expect(livekitTrack.plugins[0]).toBe(pan);
+      expect(livekitTrack.plugins.slice(1).map((n) => n.kind)).toEqual([
+        "gain",
+        "limiter",
+      ]);
+      expect(livekitTrack.plugins[1].gain.target).toBe(1.6);
+      expect(livekitTrack.gain).toBe(1);
+
+      // Still louder than 1: the context of our own takes over, with nodes
+      // of its own
       expect(() => track.setAudioContext(undefined)).not.toThrow();
-      expect(livekitTrack.gain).toBe(1.6);
+      expect(livekitTrack.context).not.toBe(hostContext);
+      expect(livekitTrack.context).toBeDefined();
+      expect(livekitTrack.plugins.map((n) => n.kind)).toEqual([
+        "gain",
+        "limiter",
+      ]);
+      expect(livekitTrack.plugins[0].context).toBe(livekitTrack.context);
+      expect(livekitTrack.plugins[0].gain.target).toBe(1.6);
       expect(livekitTrack.element.volume).toBe(0);
     });
 
@@ -259,6 +456,7 @@ describe("createLivekitMediaTrack", () => {
       expect(() => track.setVolume(1.29)).not.toThrow();
       expect(livekitTrack.element.volume).toBe(1);
       expect(livekitTrack.gain).toBeUndefined();
+      expect(livekitTrack.plugins).toEqual([]);
     });
 
     it("ignores a volume that is not a number and floors a negative one", () => {
@@ -642,6 +840,7 @@ type FakeTrack = Track & {
   detach: ReturnType<typeof vi.fn>;
   setVolume: ReturnType<typeof vi.fn>;
   setAudioContext: ReturnType<typeof vi.fn>;
+  setWebAudioPlugins: ReturnType<typeof vi.fn>;
   getRTCStatsReport: ReturnType<typeof vi.fn>;
 };
 

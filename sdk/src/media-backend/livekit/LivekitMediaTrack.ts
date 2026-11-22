@@ -91,27 +91,49 @@ export function createLivekitMediaTrack(
   let audioContext: AudioContext | undefined;
   let audioPlugins: AudioNode[] = [];
   let volume: number | undefined;
+  let boost: BoostNodes | undefined;
+  // What was last given to which track: LiveKit builds its graph anew for
+  // every change of context or plugins, which is heard, so neither is given
+  // again while it is the same (a slider being dragged asks many times)
+  let applied:
+    | { track: RemoteAudioTrack; context?: AudioContext; nodes: AudioNode[] }
+    | undefined;
   const applyAudioSettings = (track: Track | undefined): void => {
     if (!(track instanceof RemoteAudioTrack)) return;
-    // An element plays no louder than 1. Above that the track is played
-    // through a gain node instead, on a context of our own where the host
-    // gave none; at or below, it stays on the element, which is what the
-    // browser's echo canceller and output device selection know best.
-    const context =
-      audioContext ??
-      (volume !== undefined && volume > 1 ? boostContext(room) : undefined);
     const gain = Number.isFinite(volume)
       ? Math.max(0, volume as number)
       : undefined;
-    // LiveKit remembers the last volume and writes it to the elements as it
-    // leaves a context, so a gain above 1 has to be taken back while the
-    // track is still on the context: an element given more than 1 throws
-    if (context === undefined && gain !== undefined)
-      track.setVolume(elementVolume(gain));
-    track.setAudioContext(context);
-    track.setWebAudioPlugins(audioPlugins);
-    if (gain !== undefined)
-      track.setVolume(context ? gain : elementVolume(gain));
+    const louder = gain !== undefined && gain > 1;
+    // An element plays no louder than 1. Above that the track is played
+    // through Web Audio instead, on a context of our own where the host
+    // gave none; at or below, it stays on the element, which is what the
+    // browser's echo canceller and output device selection know best.
+    const context = audioContext ?? (louder ? boostContext(room) : undefined);
+    // Louder than 1 is a gain node of our own with a limiter behind it, as
+    // the last two of the plugins: LiveKit's own gain node comes after the
+    // plugins, where nothing could catch what it pushes over full scale, so
+    // it is never given more than 1
+    if (louder && context && boost?.context !== context)
+      boost = createBoostNodes(context);
+    const boosting = louder && context && boost?.context === context;
+    const nodes = boosting
+      ? [...audioPlugins, boost!.gain, boost!.limiter]
+      : audioPlugins;
+
+    const before = applied?.track === track ? applied : undefined;
+    if (before === undefined || before.context !== context) {
+      // Plugins belong to their context, so the old ones must be gone before
+      // the track is wired up on another
+      track.setAudioContext(undefined);
+      track.setWebAudioPlugins(nodes);
+      track.setAudioContext(context);
+    } else if (!sameNodes(before.nodes, nodes)) {
+      track.setWebAudioPlugins(nodes);
+    }
+    applied = { track, context, nodes };
+
+    if (gain !== undefined) track.setVolume(elementVolume(gain));
+    if (boosting) rampGain(boost!.gain, gain);
   };
 
   // Requests for the best quality, as one element of the size of the largest
@@ -268,18 +290,86 @@ export function createLivekitMediaTrack(
 }
 
 /**
- * The volume an element can be given for a playback gain: an element takes
- * [0, 1] and throws for anything else, more than 1 is the gain node's job.
+ * The volume an element (or LiveKit's gain node) is given for a playback
+ * gain: an element takes [0, 1] and throws for anything else, more than 1 is
+ * the job of the boost's gain node and its limiter.
  */
 export function elementVolume(gain: number): number {
   return Number.isFinite(gain) ? Math.min(Math.max(gain, 0), 1) : 1;
 }
 
+/**
+ * The limiter behind a gain above 1: a compressor steep and fast enough to
+ * keep what the gain pushes over full scale from clipping, and high enough to
+ * leave everything below alone. The threshold leaves room for the make-up
+ * gain Chromium's compressor adds by itself (about 1.7 dB with these values).
+ */
+export const LIMITER_SETTINGS = {
+  threshold: -3,
+  knee: 0,
+  ratio: 20,
+  attack: 0.002,
+  release: 0.1,
+} as const;
+
+/** How fast a gain follows the slider: no step to be heard, no lag to be felt. */
+const GAIN_RAMP_TIME_CONSTANT_S = 0.03;
+
+interface BoostNodes {
+  context: AudioContext;
+  gain: GainNode;
+  limiter: DynamicsCompressorNode;
+}
+
+/**
+ * The two nodes that play a track louder than it was sent, or nothing where
+ * the context cannot make them: the track is then played at 1.
+ */
+function createBoostNodes(context: AudioContext): BoostNodes | undefined {
+  try {
+    const gain = context.createGain();
+    const limiter = context.createDynamicsCompressor();
+    for (const [name, value] of Object.entries(LIMITER_SETTINGS))
+      limiter[name as keyof typeof LIMITER_SETTINGS].value = value;
+    return { context, gain, limiter };
+  } catch {
+    return undefined;
+  }
+}
+
+function rampGain(node: GainNode, gain: number): void {
+  const now = node.context.currentTime;
+  node.gain.cancelScheduledValues(now);
+  node.gain.setTargetAtTime(gain, now, GAIN_RAMP_TIME_CONSTANT_S);
+}
+
+function sameNodes(a: AudioNode[], b: AudioNode[]): boolean {
+  return a.length === b.length && a.every((node, i) => node === b[i]);
+}
+
+type SinkContext = AudioContext & {
+  sinkId?: string | { type: string };
+  setSinkId?: (id: string) => Promise<void>;
+};
+
+/** Sends the context to the room's output device, the default where it has none. */
+function followOutputDevice(context: AudioContext, room: LivekitRoom): void {
+  const device = room.getActiveDevice("audiooutput");
+  const sink = device && device !== "default" ? device : "";
+  const withSink = context as SinkContext;
+  if (withSink.setSinkId === undefined || withSink.sinkId === sink) return;
+  // A context that was never sent anywhere is on the default already
+  if (sink === "" && withSink.sinkId === undefined) return;
+  withSink.setSinkId(sink).catch(() => undefined);
+}
+
 let sharedBoostContext: AudioContext | undefined;
+const roomsFollowed = new WeakSet<LivekitRoom>();
 /**
  * The context tracks louder than 1 are played on: one for the page, made on
  * first use (by then the user has interacted with the page, which a context
- * needs to start) and sent to the room's output device where it has one.
+ * needs to start) and sent to the room's output device, also when that
+ * changes while a track is on it.
  */
 function boostContext(room: LivekitRoom): AudioContext | undefined {
   if (typeof AudioContext === "undefined") return undefined;
@@ -287,13 +377,18 @@ function boostContext(room: LivekitRoom): AudioContext | undefined {
     sharedBoostContext = new AudioContext({ latencyHint: "interactive" });
   const context = sharedBoostContext;
   if (context.state === "suspended") context.resume().catch(() => undefined);
-  const sink = room.getActiveDevice("audiooutput");
-  const withSink = context as AudioContext & {
-    sinkId?: string;
-    setSinkId?: (id: string) => Promise<void>;
-  };
-  if (sink && sink !== "default" && withSink.sinkId !== sink)
-    withSink.setSinkId?.(sink).catch(() => undefined);
+  followOutputDevice(context, room);
+  if (!roomsFollowed.has(room)) {
+    roomsFollowed.add(room);
+    room.on(RoomEvent.ActiveDeviceChanged, (kind) => {
+      if (
+        kind === "audiooutput" &&
+        sharedBoostContext !== undefined &&
+        sharedBoostContext.state !== "closed"
+      )
+        followOutputDevice(sharedBoostContext, room);
+    });
+  }
   return context;
 }
 

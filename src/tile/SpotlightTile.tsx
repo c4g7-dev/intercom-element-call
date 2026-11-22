@@ -51,6 +51,7 @@ import { type RemoteScreenShareViewModel } from "../state/media/RemoteScreenShar
 import { type MediaViewModel } from "../state/media/MediaViewModel";
 import { Slider } from "../Slider";
 import {
+  formatPlaybackVolume,
   MAX_PLAYBACK_VOLUME,
   type VolumeControls,
 } from "../state/VolumeControls";
@@ -387,6 +388,7 @@ const ScreenShareVolumeButton: FC<ScreenShareVolumeButtonProps> = ({ vm }) => {
             value={playbackVolume}
             min={0}
             max={MAX_PLAYBACK_VOLUME}
+            tooltipFormatter={formatPlaybackVolume}
             step={0.01}
             onValueChange={onVolumeChange}
             onValueCommit={onVolumeCommit}
