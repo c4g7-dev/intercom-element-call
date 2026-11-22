@@ -29,6 +29,12 @@ import {
   type VolumeControls,
 } from "../state/VolumeControls";
 import { openPopout, poppedOutIds$ } from "./popout";
+import { diag } from "../diagnostics/diag";
+import { saveSnapshot } from "../diagnostics/snapshot";
+import {
+  diagnosticsOverlay as diagnosticsOverlaySetting,
+  useSetting,
+} from "../settings/settings";
 
 /**
  * Whether the element is what the browser shows fullscreen, and the function
@@ -40,11 +46,15 @@ export function useFullscreen(
 ): [boolean, () => void] {
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
-    const onChange = (): void =>
-      setFullscreen(
+    let was = false;
+    const onChange = (): void => {
+      const on =
         element.current !== null &&
-          document.fullscreenElement === element.current,
-      );
+        document.fullscreenElement === element.current;
+      if (on !== was) diag("fullscreen", { where: "tile", on });
+      was = on;
+      setFullscreen(on);
+    };
     document.addEventListener("fullscreenchange", onChange);
     return (): void =>
       document.removeEventListener("fullscreenchange", onChange);
@@ -139,6 +149,11 @@ export const TileActions: FC<Props> = ({
 }) => {
   const { t } = useTranslation();
   const poppedOut = useBehavior(poppedOutIds$).has(popoutId);
+  const [diagnosticsMode] = useSetting(diagnosticsOverlaySetting);
+  const onSnapshot = useCallback(() => {
+    const track = video?.mediaStreamTrack$.value;
+    if (track !== undefined) void saveSnapshot(track, popoutId);
+  }, [video, popoutId]);
   const tabIndex = focusable ? undefined : -1;
 
   // A screen share is there to be read, so it is always asked for at its
@@ -183,6 +198,18 @@ export const TileActions: FC<Props> = ({
       {volume && <TileVolume volume={volume} tabIndex={tabIndex} />}
       {video && (
         <>
+          {diagnosticsMode && video.source === "screenShare" && (
+            <button
+              type="button"
+              className={styles.text}
+              title={t("diagnostics.snapshot_description")}
+              onClick={onSnapshot}
+              tabIndex={tabIndex}
+              data-testid="tile_snapshot"
+            >
+              {t("diagnostics.snapshot")}
+            </button>
+          )}
           <button
             type="button"
             aria-label={t("video_tile.pop_out")}

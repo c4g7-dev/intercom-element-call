@@ -18,6 +18,7 @@ import "@testing-library/jest-dom/vitest";
 import EN from "../locales/en/app.json";
 import { Config } from "./config/Config";
 import { i18n } from "./utils/i18n";
+import { diagOutput } from "./diagnostics/diag";
 
 // Bare-minimum i18n config.
 // Unlike the app, tests register the instance as react-i18next's default rather
@@ -41,6 +42,8 @@ i18n
   .catch((e) => logger.warn("Failed to init i18n for testing", e));
 
 Config.initDefault();
+// The diagnostics would otherwise write a line per event into every test's output
+diagOutput.write = (): void => {};
 posthog.opt_out_capturing();
 
 afterEach(cleanup);

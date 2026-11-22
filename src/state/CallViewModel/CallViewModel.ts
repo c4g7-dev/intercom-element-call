@@ -84,10 +84,16 @@ import { type BackgroundEffectsState } from "../BackgroundEffects";
 import { shallowEquals as arrayShallowEquals } from "../../utils/array";
 import { type MediaDevices } from "../MediaDevices";
 import {
+  screenShareChoices,
   screenShareLimitsForBudget,
   screenShareRequest,
 } from "../screenShareOptions";
 import { type MuteStates } from "../MuteStates";
+import {
+  recordCallDiagnostics,
+  type ShareDiagnostics,
+} from "../../diagnostics/CallDiagnostics";
+import { describeError, diag } from "../../diagnostics/diag";
 import {
   followDevice,
   followMuteState,
@@ -1541,6 +1547,8 @@ export function createCallViewModel$(
 
   // How the share that is on was asked to be encoded, for the budget below
   let screenShareSettings: VideoCaptureSettings | undefined;
+  let screenShareAudioAsked = false;
+  let screenShareBudget: ShareDiagnostics["budget"];
   const startingScreenShare = (): PublishRequest => {
     // The developer settings win; otherwise what the share menu says now
     const request = {
@@ -1548,8 +1556,51 @@ export function createCallViewModel$(
       ...(capture.screenShare && { capture: capture.screenShare }),
     };
     screenShareSettings = request.capture;
+    screenShareAudioAsked = request.audio !== false;
+    screenShareBudget = undefined;
+    const choices = screenShareChoices();
+    diag("screen_share_start", {
+      preset: choices.preset,
+      resolution: choices.resolution,
+      codec: choices.codec,
+      customBitrateMbps: choices.customBitrate,
+      customFramerate: choices.customFramerate,
+      // Which kind of source, never which device: its id says nothing useful
+      audio: ["none", "system"].includes(choices.audio)
+        ? choices.audio
+        : "device",
+      developerOverride: capture.screenShare !== undefined,
+      capture: request.capture,
+    });
     return request;
   };
+  const shareDiagnostics = (): ShareDiagnostics | undefined => {
+    const track = screenShare$.value;
+    const settings = screenShareSettings;
+    if (track === undefined) return undefined;
+    const size = track.dimensions();
+    const scale = settings ? screenShareScale(settings, size) : 1;
+    return {
+      expected: size && {
+        width: size.width / scale,
+        height: size.height / scale,
+      },
+      audioExpected: screenShareAudioAsked,
+      budget: screenShareBudget,
+    };
+  };
+  recordCallDiagnostics(scope, {
+    participation: rtcParticipation,
+    participant: `${userId}:${deviceId}`,
+    micEnabled$: muteStates.audio.enabled$,
+    cameraEnabled$: muteStates.video.enabled$,
+    devices: {
+      audioInput: mediaDevices.audioInput.available$,
+      audioOutput: mediaDevices.audioOutput.available$,
+      videoInput: mediaDevices.videoInput.available$,
+    },
+    share: shareDiagnostics,
+  });
 
   // The SFU sends a copy of our share to every viewer: its bitrate follows
   // the number of them so that the server stays within its uplink
@@ -1581,6 +1632,19 @@ export function createCallViewModel$(
         logger.info(
           `Screen share for ${viewers} viewer(s) within ${egressBudgetMbps} Mbps: ${limits.maxBitrate} bps, ${limits.maxFramerate} fps`,
         );
+        screenShareBudget = {
+          mbps: egressBudgetMbps,
+          viewers,
+          maxBitrate: limits.maxBitrate,
+          maxFramerate: limits.maxFramerate,
+        };
+        diag("budget", {
+          ...screenShareBudget,
+          uncappedBitrate: bitrate,
+          overBudget: limits.overBudget,
+          width: size.width / scale,
+          height: size.height / scale,
+        });
         track.setEncodingLimits(limits).catch((e) => {
           logger.error("Failed to change the screen share's encoding", e);
         });
@@ -1594,10 +1658,21 @@ export function createCallViewModel$(
       ? null
       : (): void => {
           const track = screenShare$.value;
+          if (track !== undefined) diag("screen_share_stop", { by: "user" });
           (track === undefined
-            ? rtcParticipation.publish(startingScreenShare())
+            ? rtcParticipation.publish(startingScreenShare()).then((started) =>
+                diag("screen_share_published", {
+                  sid: started.id,
+                  capture: "dimensions" in started && started.dimensions(),
+                }),
+              )
             : rtcParticipation.unpublish("screenShare")
           ).catch((e: unknown) => {
+            diag("screen_share_error", {
+              phase: track === undefined ? "start" : "stop",
+              cancelled: isPermissionDenied(e),
+              error: describeError(e),
+            });
             logger.error(
               `Screen share ${track === undefined ? "start" : "stop"} failed`,
               e,

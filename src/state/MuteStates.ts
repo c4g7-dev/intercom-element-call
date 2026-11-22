@@ -25,6 +25,7 @@ import { type MediaDevices, type MediaDevice } from "../state/MediaDevices";
 import { type DeviceMuteState, type HostBridge } from "../HostBridge";
 import { type ObservableScope } from "./ObservableScope";
 import { type Behavior, constant } from "./Behavior";
+import { diag } from "../diagnostics/diag";
 
 interface MuteStateData {
   enabled$: Observable<boolean>;
@@ -80,6 +81,8 @@ export class MuteState<Label, Selected> {
           logger.info(
             `MuteState: devices connected: ${canControlDevices}, disabling`,
           );
+          if (this.devicesConnectedBefore) this.record(false, "device_lost");
+          else this.record(false, "no_device");
           // We need to sync the mute state with the handler
           // to ensure nothing is beeing published.
           this.handler$.value(false).catch((err) => {
@@ -108,6 +111,11 @@ export class MuteState<Label, Selected> {
           ? this.restoreOnReturn && (this.lastWanted ?? this.enabledByDefault)
           : this.enabledByDefault;
         this.lastWanted = initialWanted;
+        this.record(
+          initialWanted,
+          deviceCameBackInCall ? "device_returned" : "initial",
+          { handlerAttached },
+        );
         // With a handler attached we start off and let the sync below actually call
         // the handler, so the switch shows "on" only once the track is really there.
         // Without one (lobby) enabled = initialWanted -> no call to handler.
@@ -133,6 +141,11 @@ export class MuteState<Label, Selected> {
               );
               // The handler has the last word: a refusal is what is wanted now
               if (enabled !== latestDesired) this.lastWanted = enabled;
+              this.record(
+                enabled,
+                enabled === latestDesired ? "applied" : "handler_refused",
+                { asked: latestDesired },
+              );
               if (enabled === previouslyEnabled) {
                 syncing$.next(false);
               } else {
@@ -157,6 +170,7 @@ export class MuteState<Label, Selected> {
           const s = desired$.subscribe((desired) => {
             latestDesired = desired;
             this.lastWanted = desired;
+            this.record(desired, "user");
             if (syncing$.value === false) startSync();
           });
           if (enabled !== latestDesired) startSync();
@@ -209,7 +223,29 @@ export class MuteState<Label, Selected> {
      * returns to the state the user last asked for, rather than to off.
      */
     private readonly restoreOnReturn = false,
+    /** What this switch is called in the diagnostics; unrecorded without. */
+    private readonly diagSource?: "microphone" | "camera",
   ) {}
+
+  /**
+   * `user` is a request (the switch, a shortcut, the host); `applied` and
+   * `handler_refused` are what came of one; the rest happen by themselves.
+   */
+  private record(
+    enabled: boolean,
+    reason:
+      | "initial"
+      | "user"
+      | "applied"
+      | "handler_refused"
+      | "device_lost"
+      | "device_returned"
+      | "no_device",
+    more: Record<string, unknown> = {},
+  ): void {
+    if (this.diagSource === undefined) return;
+    diag("mute", { source: this.diagSource, enabled, reason, ...more });
+  }
 }
 
 export class MuteStates {
@@ -235,12 +271,15 @@ export class MuteStates {
     this.initialMuteState.audioEnabled,
     constant(false),
     true,
+    "microphone",
   );
   public readonly video = new MuteState(
     this.scope,
     this.mediaDevices.videoInput,
     this.initialMuteState.videoEnabled,
     this.isEarpiece$,
+    false,
+    "camera",
   );
 
   public constructor(
@@ -277,6 +316,11 @@ export class MuteStates {
         this.scope.bind(),
       )
       .subscribe(([request, state, setAudioEnabled, setVideoEnabled]) => {
+        diag("mute_request", {
+          reason: "host",
+          audio: request.data.audio_enabled,
+          video: request.data.video_enabled,
+        });
         // First copy the current state into our new state
         const newState = { ...state };
         // Then apply whichever changes the host asked for

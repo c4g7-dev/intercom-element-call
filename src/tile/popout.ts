@@ -10,6 +10,7 @@ import { BehaviorSubject, type Subscription } from "rxjs";
 import { logger } from "matrix-js-sdk/lib/logger";
 
 import { type Behavior } from "../state/Behavior";
+import { diag } from "../diagnostics/diag";
 import {
   MAX_PLAYBACK_VOLUME,
   type VolumeControls,
@@ -105,8 +106,10 @@ export function openPopout({
   );
   if (win === null) {
     logger.warn("The pop-out window was blocked");
+    diag("popout", { action: "blocked", id, source: video.source });
     return false;
   }
+  diag("popout", { action: "open", id, source: video.source });
 
   // Written with the DOM rather than as markup: nothing a member can choose
   // (their name is in the title) is ever parsed as HTML
@@ -161,6 +164,13 @@ export function openPopout({
     if (doc.fullscreenElement) void doc.exitFullscreen();
     else void doc.documentElement.requestFullscreen().catch(() => undefined);
   };
+  doc.addEventListener("fullscreenchange", () =>
+    diag("fullscreen", {
+      where: "popout",
+      id,
+      on: doc.fullscreenElement !== null,
+    }),
+  );
   const fullscreen = doc.createElement("button");
   fullscreen.type = "button";
   fullscreen.textContent = labels.fullscreen;
@@ -182,6 +192,7 @@ export function openPopout({
   const close = (): void => {
     if (closed) return;
     closed = true;
+    diag("popout", { action: "close", id, byUser: win.closed });
     clearTimeout(grace);
     clearTimeout(idle);
     clearInterval(poll);

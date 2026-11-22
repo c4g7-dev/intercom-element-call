@@ -68,6 +68,7 @@ import {
 } from "../reactions/useReactionsSender";
 import { ReactionsAudioRenderer } from "./ReactionAudioRenderer";
 import { ReactionsOverlay } from "./ReactionsOverlay";
+import { DiagnosticsOverlay } from "../diagnostics/DiagnosticsOverlay";
 import { CallEventAudioRenderer } from "./CallEventAudioRenderer";
 import {
   createRTCSlot,
@@ -730,6 +731,7 @@ export const InCallView: FC<InCallViewProps> = ({
       {screenShareToast}
       {earpieceOverlay}
       <ReactionsOverlay vm={vm} />
+      <DiagnosticsOverlay />
       {footer}
       {showModals && (
         <>

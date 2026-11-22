@@ -104,3 +104,8 @@ Please see LICENSE in the repository root for full details.
     display: none;
   }
 }
+
+.actions button.text {
+  padding-inline: var(--cpd-space-2x);
+  font: var(--cpd-font-body-xs-medium);
+}

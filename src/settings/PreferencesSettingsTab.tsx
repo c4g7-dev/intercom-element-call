@@ -15,6 +15,7 @@ import {
   showReactions as showReactionsSetting,
   playReactionsSound as playReactionsSoundSetting,
   developerMode as developerModeSetting,
+  diagnosticsOverlay as diagnosticsOverlaySetting,
   useSetting,
 } from "./settings";
 
@@ -38,6 +39,7 @@ export const PreferencesSettingsTab: FC = () => {
   };
 
   const [developerMode, setDeveloperMode] = useSetting(developerModeSetting);
+  const [diagnostics, setDiagnostics] = useSetting(diagnosticsOverlaySetting);
 
   return (
     <div>
@@ -74,6 +76,16 @@ export const PreferencesSettingsTab: FC = () => {
           type="checkbox"
           checked={playReactionsSound}
           onChange={(e) => onChangeSetting(e, setPlayReactionSound)}
+        />
+      </FieldRow>
+      <FieldRow>
+        <InputField
+          id="diagnosticsOverlay"
+          type="checkbox"
+          checked={diagnostics}
+          label={t("settings.preferences_tab.diagnostics_label")}
+          description={t("settings.preferences_tab.diagnostics_description")}
+          onChange={(e) => onChangeSetting(e, setDiagnostics)}
         />
       </FieldRow>
       <FieldRow>

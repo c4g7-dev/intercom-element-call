@@ -74,6 +74,7 @@ import { useMuteStates } from "../state/useMuteStates.ts";
 import { useLeaveToHome } from "../LeaveToHomeContext.ts";
 import { useLocalMedia } from "../useLocalMedia.ts";
 import { autoMuteInLargeCalls } from "../settings/settings";
+import { diag } from "../diagnostics/diag";
 
 /**
  * If there already are this many participants in the call, we automatically mute
@@ -185,8 +186,15 @@ const LoadedCallView: FC<LoadedProps> = ({
     if (
       autoMuteInLargeCalls.getValue() &&
       memberships.length >= MUTE_PARTICIPANT_COUNT
-    )
+    ) {
+      diag("mute_request", {
+        source: "microphone",
+        enabled: false,
+        reason: "auto_large_call",
+        members: memberships.length,
+      });
       muteStates.audio.setEnabled$.value?.(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

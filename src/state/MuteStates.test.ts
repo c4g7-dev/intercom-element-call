@@ -28,6 +28,7 @@ import {
 import { constant } from "./Behavior";
 import { ObservableScope } from "./ObservableScope";
 import { flushPromises, mockMediaDevices } from "../utils/test";
+import { diagBuffer, resetDiag } from "../diagnostics/diag";
 import { initializeWidget } from "../widget";
 initializeWidget();
 
@@ -259,6 +260,44 @@ describe("MuteState", () => {
 
     expect(handler.mock.calls).toEqual([[false], [true]]);
     expect(muteState.enabled$.value).toBe(true);
+  });
+
+  test("records why the switch changed in the diagnostics", async () => {
+    resetDiag();
+    const available$ = new BehaviorSubject(aCamera);
+    const muteState = new MuteState(
+      testScope,
+      aDevice(available$),
+      true,
+      constant(false),
+      true,
+      "microphone",
+    );
+    // A device that refuses the first time it is turned on
+    const handler = vi
+      .fn(async (desired: boolean) => Promise.resolve(desired))
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false);
+    muteState.setHandler(handler);
+    available$.next(new Map());
+    await flushPromises();
+    available$.next(aCamera);
+    await flushPromises();
+    muteState.setEnabled$.value?.(true);
+    await flushPromises();
+
+    expect(
+      diagBuffer()
+        .filter((r) => r.type === "mute")
+        .map(({ source, enabled, reason }) => `${source} ${enabled} ${reason}`),
+    ).toEqual([
+      "microphone true initial",
+      "microphone false device_lost",
+      "microphone true device_returned",
+      "microphone false handler_refused",
+      "microphone true user",
+      "microphone true applied",
+    ]);
   });
 
   test("keeps a restorable device off when the user had turned it off", async () => {

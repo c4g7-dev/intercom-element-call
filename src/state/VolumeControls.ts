@@ -10,6 +10,7 @@ import { combineLatest, map, merge, of, Subject, switchMap, tap } from "rxjs";
 import { type Behavior } from "./Behavior";
 import { type ObservableScope } from "./ObservableScope";
 import { accumulate } from "../utils/observable";
+import { diag } from "../diagnostics/diag";
 
 /**
  * Controls for audio playback volume.
@@ -138,6 +139,7 @@ export function createVolumeControls(
     .subscribe(() => {
       if (persistKey !== undefined && pendingStore !== undefined)
         storeVolume(persistKey, pendingStore);
+      diag("volume", { of: persistKey, volume: playbackVolume$.value });
     });
 
   // Sync the requested volume with the audio playback module

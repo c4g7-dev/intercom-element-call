@@ -1,0 +1,136 @@
+/*
+Copyright 2026 InterCom contributors
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+.overlay {
+  position: fixed;
+  inset-block-start: var(--cpd-space-2x);
+  inset-inline-start: var(--cpd-space-2x);
+  z-index: 20;
+  max-inline-size: calc(100% - var(--cpd-space-4x));
+  max-block-size: calc(100% - var(--cpd-space-4x));
+  overflow: auto;
+  box-sizing: border-box;
+  padding: var(--cpd-space-2x);
+  color: var(--cpd-color-text-primary);
+  background: var(--cpd-color-bg-canvas-default);
+  border: 1px solid var(--cpd-color-border-interactive-secondary);
+  border-radius: var(--intercom-radius-control, 8px);
+  font:
+    11px/1.35 ui-monospace,
+    "DejaVu Sans Mono",
+    Consolas,
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--cpd-space-2x);
+}
+
+.summary {
+  flex: 1;
+  color: var(--cpd-color-text-secondary);
+}
+
+.header button {
+  appearance: none;
+  padding: 1px var(--cpd-space-2x);
+  border: 1px solid var(--cpd-color-border-interactive-secondary);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.header button:hover {
+  background: var(--cpd-color-bg-subtle-primary);
+}
+
+.waiting {
+  margin: var(--cpd-space-1x) 0;
+  color: var(--cpd-color-text-secondary);
+}
+
+.checks,
+.timeline {
+  margin: var(--cpd-space-1x) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checks li {
+  display: flex;
+  gap: var(--cpd-space-2x);
+}
+
+.mark {
+  inline-size: 1em;
+  font-weight: bold;
+  color: var(--cpd-color-text-secondary);
+}
+
+.checks li[data-status="pass"] .mark {
+  color: var(--cpd-color-text-success-primary);
+}
+
+.checks li[data-status="fail"] .mark,
+.checks li[data-status="fail"] .detail {
+  color: var(--cpd-color-text-critical-primary);
+}
+
+.detail {
+  color: var(--cpd-color-text-secondary);
+}
+
+.tracks {
+  border-collapse: collapse;
+  white-space: nowrap;
+}
+
+.tracks th,
+.tracks td {
+  padding: 0 var(--cpd-space-1-5x) 0 0;
+  text-align: start;
+  font-weight: normal;
+}
+
+.tracks th {
+  color: var(--cpd-color-text-secondary);
+}
+
+.tracks tr[data-muted="true"] {
+  color: var(--cpd-color-text-secondary);
+}
+
+.tracks td[data-limited="true"] {
+  color: var(--cpd-color-text-critical-primary);
+}
+
+.tracks td[data-hw="true"] {
+  color: var(--cpd-color-text-success-primary);
+}
+
+.meter {
+  display: inline-block;
+  inline-size: 60px;
+  block-size: 6px;
+  background: var(--cpd-color-bg-subtle-primary);
+}
+
+.meter > span {
+  display: block;
+  block-size: 100%;
+  background: var(--cpd-color-text-success-primary);
+}
+
+.timeline {
+  color: var(--cpd-color-text-secondary);
+  white-space: nowrap;
+}

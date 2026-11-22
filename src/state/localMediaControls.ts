@@ -17,6 +17,7 @@ import { combineLatest, NEVER, type Observable } from "rxjs";
 
 import { type MediaDevice } from "./MediaDevices";
 import { type Handler } from "./MuteStates";
+import { describeError, diag } from "../diagnostics/diag";
 
 /** How a mute switch gets a track where there is none. */
 export interface TrackSupply {
@@ -95,6 +96,7 @@ export function followMuteState(
     retryTimer = undefined;
   };
   const giveUp = (): void => {
+    diag("mute", { source, enabled: false, reason: "publish_failure" });
     cancelRetry();
     attempts = 0;
     desired = false;
@@ -106,6 +108,9 @@ export function followMuteState(
     publishing = true;
     cancelRetry();
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const attempt = attempts + 1;
+    diag("publish_attempt", { source, attempt });
     try {
       // A publication that never settles (a connection that never comes up)
       // must not leave the switch waiting on it forever
@@ -119,19 +124,39 @@ export function followMuteState(
         }),
       ]);
       attempts = 0;
+      diag("publish_result", {
+        source,
+        attempt,
+        ok: true,
+        tookMs: Date.now() - startedAt,
+      });
       return true;
     } catch (e) {
+      const failure = {
+        source,
+        attempt,
+        ok: false,
+        tookMs: Date.now() - startedAt,
+        error: describeError(e),
+      };
       if (isDeviceRefusal(e)) {
         logger.error(`Failed to publish the ${source}`, e);
+        diag("publish_result", { ...failure, outcome: "device_refused" });
         attempts = 0;
         return false;
       }
       const delay = PUBLISH_RETRY_DELAYS_MS[attempts++];
       if (delay === undefined) {
         logger.error(`Failed to publish the ${source}, giving up`, e);
+        diag("publish_result", { ...failure, outcome: "gave_up" });
         attempts = 0;
         return false;
       }
+      diag("publish_result", {
+        ...failure,
+        outcome: "retry",
+        retryInMs: delay,
+      });
       logger.warn(
         `Failed to publish the ${source}, staying unmuted and retrying in ${delay}ms`,
         e,
@@ -168,6 +193,8 @@ export function followMuteState(
     const track = track$.value;
     if (track !== undefined) {
       desired = await track.setEnabled(enabled);
+      if (desired !== enabled)
+        diag("mute", { source, enabled: desired, reason: "device_refused" });
       return desired;
     }
     if (!enabled) return false;

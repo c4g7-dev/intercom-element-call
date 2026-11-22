@@ -97,6 +97,18 @@
     "show_connection_stats": "Show connection statistics",
     "url_params": "URL parameters"
   },
+  "diagnostics": {
+    "check_mic_audio": "Mic publishing with audio",
+    "check_no_limitation": "No quality limitation",
+    "check_share_audio": "Share audio flowing",
+    "check_share_resolution": "Screen share at expected resolution",
+    "check_top_layer": "Receiving top layer",
+    "snapshot": "Snapshot",
+    "snapshot_description": "Save the frame shown right now as a PNG, for diagnostics",
+    "test_pattern": "Sharpness test pattern",
+    "title": "Diagnostics",
+    "waiting": "Waiting for the first reading…"
+  },
   "disconnected_banner": "Connectivity to the server has been lost.",
   "error": {
     "background_animated": "Animated images cannot be used as a background",
@@ -285,6 +297,8 @@
     "preferences_tab": {
       "developer_mode_label": "Developer mode",
       "developer_mode_label_description": "Enable developer mode and show developer settings tab.",
+      "diagnostics_description": "Show live statistics for every track over the call. Ctrl+Shift+D toggles it.",
+      "diagnostics_label": "Diagnostics",
       "introduction": "Here you can configure extra options for an improved experience.",
       "reactions_play_sound_description": "Play a sound effect when anyone sends a reaction into a call.",
       "reactions_play_sound_label": "Play reaction sounds",

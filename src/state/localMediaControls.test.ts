@@ -18,6 +18,7 @@ import {
 } from "./localMediaControls";
 import { type Handler } from "./MuteStates";
 import { ObservableScope } from "./ObservableScope";
+import { diagBuffer, resetDiag } from "../diagnostics/diag";
 
 let scope: ObservableScope;
 
@@ -83,6 +84,54 @@ describe("followMuteState", () => {
     await vi.advanceTimersByTimeAsync(PUBLISH_RETRY_DELAYS_MS[0]);
     expect(publish).toHaveBeenCalledTimes(2);
     expect(setEnabled).not.toHaveBeenCalled();
+  });
+
+  test("records each attempt and how it ended in the diagnostics", async () => {
+    resetDiag();
+    const refused = new DOMException("denied", "NotAllowedError");
+    const publish = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("not connected"))
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(refused);
+    const { handler } = setup(publish);
+
+    await handler()(true);
+    await vi.advanceTimersByTimeAsync(PUBLISH_RETRY_DELAYS_MS[0]);
+    await handler()(true);
+
+    expect(
+      diagBuffer().map(({ type, source, attempt, ok, outcome }) => ({
+        type,
+        source,
+        attempt,
+        ok,
+        outcome,
+      })),
+    ).toEqual([
+      { type: "publish_attempt", source: "microphone", attempt: 1 },
+      {
+        type: "publish_result",
+        source: "microphone",
+        attempt: 1,
+        ok: false,
+        outcome: "retry",
+      },
+      { type: "publish_attempt", source: "microphone", attempt: 2 },
+      { type: "publish_result", source: "microphone", attempt: 2, ok: true },
+      { type: "publish_attempt", source: "microphone", attempt: 1 },
+      {
+        type: "publish_result",
+        source: "microphone",
+        attempt: 1,
+        ok: false,
+        outcome: "device_refused",
+      },
+    ]);
+    expect(diagBuffer()[1].error).toEqual({
+      name: "Error",
+      message: "not connected",
+    });
   });
 
   test("retries at once when the participation becomes connected", async () => {

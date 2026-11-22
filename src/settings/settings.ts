@@ -350,3 +350,9 @@ export function seedSettingsFromConfig(
     }
   }
 }
+
+/** Whether the diagnostics overlay is shown over the call (Ctrl+Shift+D). */
+export const diagnosticsOverlay = new Setting<boolean>(
+  "intercom-diagnostics-overlay",
+  false,
+);
