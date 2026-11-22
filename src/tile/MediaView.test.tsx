@@ -89,7 +89,7 @@ describe("MediaView", () => {
       expect(screenShare.requestHighQuality).toHaveBeenCalledOnce();
     });
 
-    it("offers no window or fullscreen without a video, and a volume only with controls", async () => {
+    it("offers no window or fullscreen without a video, and a volume only with controls", () => {
       const { unmount } = render(
         <MediaView {...baseProps} video={undefined} />,
       );
