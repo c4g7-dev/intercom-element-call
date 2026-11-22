@@ -100,10 +100,18 @@ export function createLivekitMediaTrack(
     const context =
       audioContext ??
       (volume !== undefined && volume > 1 ? boostContext(room) : undefined);
+    const gain = Number.isFinite(volume)
+      ? Math.max(0, volume as number)
+      : undefined;
+    // LiveKit remembers the last volume and writes it to the elements as it
+    // leaves a context, so a gain above 1 has to be taken back while the
+    // track is still on the context: an element given more than 1 throws
+    if (context === undefined && gain !== undefined)
+      track.setVolume(elementVolume(gain));
     track.setAudioContext(context);
     track.setWebAudioPlugins(audioPlugins);
-    if (volume !== undefined)
-      track.setVolume(context ? volume : Math.min(volume, 1));
+    if (gain !== undefined)
+      track.setVolume(context ? gain : elementVolume(gain));
   };
 
   // Requests for the best quality, as one element of the size of the largest
@@ -257,6 +265,14 @@ export function createLivekitMediaTrack(
       };
     },
   };
+}
+
+/**
+ * The volume an element can be given for a playback gain: an element takes
+ * [0, 1] and throws for anything else, more than 1 is the gain node's job.
+ */
+export function elementVolume(gain: number): number {
+  return Number.isFinite(gain) ? Math.min(Math.max(gain, 0), 1) : 1;
 }
 
 let sharedBoostContext: AudioContext | undefined;

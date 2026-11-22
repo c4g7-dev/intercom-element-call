@@ -120,8 +120,13 @@ export function createVolumeControls(
                 state.volume === 0 ? state.committedVolume : state.volume,
             };
           default:
-            // Volume adjustment
-            return { ...state, volume: event };
+            // Volume adjustment, kept within what can be played
+            return {
+              ...state,
+              volume: Number.isFinite(event)
+                ? Math.min(Math.max(event, 0), MAX_PLAYBACK_VOLUME)
+                : state.volume,
+            };
         }
       }),
       // Kept once the user lets go, not for every step of a drag

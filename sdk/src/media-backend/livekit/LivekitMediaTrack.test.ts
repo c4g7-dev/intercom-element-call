@@ -29,6 +29,7 @@ import {
 import {
   createLivekitMediaTrack,
   createLocalLivekitMediaTrack,
+  elementVolume,
 } from "./LivekitMediaTrack";
 
 describe("createLivekitMediaTrack", () => {
@@ -120,6 +121,162 @@ describe("createLivekitMediaTrack", () => {
     ) as AudioMediaTrack;
     track.setVolume(0.5);
     expect(publication.track!.setVolume).toHaveBeenCalledWith(0.5);
+  });
+
+  describe("a volume above 1", () => {
+    /**
+     * LiveKit's RemoteAudioTrack as far as volume goes: it remembers the last
+     * volume, writes it to the elements off a context and to a gain node on
+     * one, and gives it back to the elements when the context goes. The
+     * element refuses anything outside [0, 1], as a real one does.
+     */
+    function volumeTrack(): FakeTrack & {
+      element: { volume: number; muted: boolean };
+      gain: number | undefined;
+    } {
+      let elementVolume = 1;
+      const element = {
+        muted: false,
+        get volume(): number {
+          return elementVolume;
+        },
+        set volume(v: number) {
+          if (!(v >= 0 && v <= 1))
+            throw new DOMException(
+              `The volume provided (${v}) is outside the range [0, 1]`,
+              "IndexSizeError",
+            );
+          elementVolume = v;
+        },
+      };
+      let context: unknown;
+      let remembered: number | undefined;
+      const track = Object.assign(fakeTrack(), {
+        element,
+        gain: undefined as number | undefined,
+      });
+      track.setVolume.mockImplementation((v: number) => {
+        if (context) track.gain = v;
+        else element.volume = v;
+        remembered = v;
+      });
+      track.setAudioContext.mockImplementation((ctx: unknown) => {
+        if (context === ctx) return;
+        context = ctx;
+        if (ctx) {
+          element.volume = 0;
+          element.muted = true;
+          track.gain = remembered ?? 1;
+        } else {
+          track.gain = undefined;
+          element.muted = false;
+          element.volume = remembered ?? 1;
+        }
+      });
+      return track;
+    }
+
+    function audioTrack(livekitTrack: FakeTrack): AudioMediaTrack {
+      const { participant, publication, room } = fakes({
+        kind: Track.Kind.Audio,
+        track: livekitTrack,
+      });
+      (
+        room as unknown as { getActiveDevice: () => undefined }
+      ).getActiveDevice = (): undefined => undefined;
+      return createLivekitMediaTrack(
+        scope,
+        participant,
+        publication as unknown as TrackPublication,
+        room,
+      ) as AudioMediaTrack;
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal(
+        "AudioContext",
+        class {
+          public state = "running";
+        },
+      );
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("is played through a gain node, the element silent", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      track.setVolume(1.29);
+      expect(livekitTrack.gain).toBe(1.29);
+      expect(livekitTrack.element.volume).toBe(0);
+      track.setVolume(2);
+      expect(livekitTrack.gain).toBe(2);
+      expect(livekitTrack.element.volume).toBe(0);
+    });
+
+    it.each([1, 0.4, 0])(
+      "goes back to the element at %s without giving it more than 1",
+      (lower) => {
+        const livekitTrack = volumeTrack();
+        const track = audioTrack(livekitTrack);
+        track.setVolume(1.29);
+        expect(() => track.setVolume(lower)).not.toThrow();
+        expect(livekitTrack.gain).toBeUndefined();
+        expect(livekitTrack.element.muted).toBe(false);
+        expect(livekitTrack.element.volume).toBe(lower);
+      },
+    );
+
+    it("survives the slider being dragged up and down across 1", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      for (const v of [0.8, 1.1, 1.29, 2, 0.99, 1.01, 0, 1.5, 1]) {
+        expect(() => track.setVolume(v)).not.toThrow();
+        expect(livekitTrack.element.volume).toBeGreaterThanOrEqual(0);
+        expect(livekitTrack.element.volume).toBeLessThanOrEqual(1);
+      }
+      expect(livekitTrack.element.volume).toBe(1);
+    });
+
+    it("stays within the element's range when the host takes its context away", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      const hostContext = {} as AudioContext;
+      track.setAudioContext(hostContext, []);
+      track.setVolume(1.6);
+      expect(livekitTrack.gain).toBe(1.6);
+      // Still louder than 1: the context of our own takes over
+      expect(() => track.setAudioContext(undefined)).not.toThrow();
+      expect(livekitTrack.gain).toBe(1.6);
+      expect(livekitTrack.element.volume).toBe(0);
+    });
+
+    it("is capped at 1 on the element where there is no Web Audio", () => {
+      vi.stubGlobal("AudioContext", undefined);
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      expect(() => track.setVolume(1.29)).not.toThrow();
+      expect(livekitTrack.element.volume).toBe(1);
+      expect(livekitTrack.gain).toBeUndefined();
+    });
+
+    it("ignores a volume that is not a number and floors a negative one", () => {
+      const livekitTrack = volumeTrack();
+      const track = audioTrack(livekitTrack);
+      expect(() => track.setVolume(NaN)).not.toThrow();
+      expect(livekitTrack.element.volume).toBe(1);
+      expect(() => track.setVolume(-0.5)).not.toThrow();
+      expect(livekitTrack.element.volume).toBe(0);
+    });
+
+    it("maps a gain to an element volume within [0, 1]", () => {
+      expect(elementVolume(1.29)).toBe(1);
+      expect(elementVolume(2)).toBe(1);
+      expect(elementVolume(0.3)).toBe(0.3);
+      expect(elementVolume(-1)).toBe(0);
+      expect(elementVolume(NaN)).toBe(1);
+    });
   });
 
   it("is active while the member speaks and the track is not muted", () => {
@@ -484,6 +641,7 @@ type FakeTrack = Track & {
   attach: ReturnType<typeof vi.fn>;
   detach: ReturnType<typeof vi.fn>;
   setVolume: ReturnType<typeof vi.fn>;
+  setAudioContext: ReturnType<typeof vi.fn>;
   getRTCStatsReport: ReturnType<typeof vi.fn>;
 };
 

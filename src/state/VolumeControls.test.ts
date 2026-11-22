@@ -85,3 +85,16 @@ test("ignores stored values that make no sense", () => {
   localStorage.setItem("intercom-playback-volumes", "not json");
   expect(controls("voice:@alice:example.org").playbackVolume$.value).toBe(1);
 });
+
+test("keeps an adjustment within what can be played", () => {
+  const c = controls();
+  c.adjustPlaybackVolume(1.29);
+  expect(c.sink).toHaveBeenLastCalledWith(1.29);
+  c.adjustPlaybackVolume(7);
+  expect(c.sink).toHaveBeenLastCalledWith(2);
+  c.adjustPlaybackVolume(-1);
+  expect(c.sink).toHaveBeenLastCalledWith(0);
+  c.adjustPlaybackVolume(1.4);
+  c.adjustPlaybackVolume(NaN);
+  expect(c.sink).toHaveBeenLastCalledWith(1.4);
+});
