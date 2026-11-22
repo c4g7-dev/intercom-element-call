@@ -61,6 +61,11 @@ export {
   createLivekitBackend,
   type LivekitBackendOptions,
 } from "./src/media-backend/livekit/LivekitBackend";
+// For a host that follows a screen share's encoding (a bitrate budget)
+export {
+  screenShareBitrate,
+  screenShareScale,
+} from "./src/media-backend/livekit/publishOptions";
 // Tracks for a lobby, captured ahead of the join and handed to it
 export { createLocalMedia } from "./src/LocalMedia";
 // For a host whose processor is a livekit-client one, such as @livekit/track-processors

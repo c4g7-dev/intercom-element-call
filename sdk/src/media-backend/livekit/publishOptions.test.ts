@@ -11,6 +11,7 @@ import {
   audioCaptureOptions,
   screenShareCaptureOptions,
   screenSharePublishOptions,
+  screenShareScale,
   videoCaptureOptions,
   videoPublishOptions,
 } from "./publishOptions";
@@ -101,9 +102,11 @@ describe("screenShareCaptureOptions", () => {
   it("captures the audio without processing by default", () => {
     expect(screenShareCaptureOptions({ source: "screenShare" })).toEqual({
       audio: {
+        echoCancellation: false,
         autoGainControl: false,
         noiseSuppression: false,
         voiceIsolation: false,
+        channelCount: 2,
       },
       selfBrowserSurface: "include",
       surfaceSwitching: "include",
@@ -138,8 +141,72 @@ describe("screenSharePublishOptions", () => {
         codec: "av1",
       }),
     ).toEqual({
-      screenShareEncoding: { maxBitrate: 5_000_000, maxFramerate: 15 },
+      screenShareEncoding: {
+        maxBitrate: 5_000_000,
+        maxFramerate: 15,
+        priority: "high",
+      },
       videoCodec: "av1",
+    });
+  });
+
+  it("follows the captured size with the bitrate and scales by a whole number", () => {
+    const settings = {
+      autoBitrate: {
+        base: 4_000_000,
+        bitsPerPixel: 3,
+        min: 6_000_000,
+        max: 30_000_000,
+      },
+      fitWithin: { width: 5120, height: 1440, integer: true },
+      simulcast: false,
+      degradationPreference: "maintain-resolution",
+    } as const;
+    // 1440p is sent as it is, at about 15 Mbps
+    expect(
+      screenSharePublishOptions(settings, { width: 2560, height: 1440 }),
+    ).toEqual({
+      screenShareEncoding: {
+        maxBitrate: 15_059_200,
+        maxFramerate: undefined,
+        priority: "high",
+      },
+      simulcast: false,
+      degradationPreference: "maintain-resolution",
+    });
+    // 4K is halved to 1080p, at about 10 Mbps
+    expect(
+      screenSharePublishOptions(settings, { width: 3840, height: 2160 })
+        ?.screenShareEncoding,
+    ).toEqual({
+      maxBitrate: 10_220_800,
+      maxFramerate: undefined,
+      priority: "high",
+      scaleResolutionDownBy: 2,
+    });
+    expect(screenShareScale(settings, { width: 5120, height: 2880 })).toBe(2);
+    expect(screenShareScale(settings, { width: 3440, height: 1440 })).toBe(1);
+    expect(screenShareScale(settings, { width: 1920, height: 1080 })).toBe(1);
+  });
+
+  it("captures at the source's own size with the frame rate as a constraint", () => {
+    expect(
+      screenShareCaptureOptions({
+        source: "screenShare",
+        audio: { kind: "device", deviceId: "monitor" },
+        capture: {
+          resolution: { width: 0, height: 0, frameRate: 30 },
+          contentHint: "detail",
+        },
+      }),
+    ).toEqual({
+      audio: false,
+      selfBrowserSurface: "include",
+      surfaceSwitching: "include",
+      systemAudio: "exclude",
+      resolution: { width: 0, height: 0 },
+      video: { frameRate: { ideal: 30, max: 30 } },
+      contentHint: "detail",
     });
   });
 });

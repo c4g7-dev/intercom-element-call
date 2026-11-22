@@ -203,11 +203,12 @@ describe("createLivekitLocalMedia", () => {
     const t = await media.publish({ source: "screenShare" });
 
     expect(t.source).toBe("screenShare");
-    expect(participant.setScreenShareEnabled).toHaveBeenCalledWith(
-      true,
+    expect(participant.createScreenTracks).toHaveBeenCalledWith(
       expect.objectContaining({ selfBrowserSurface: "include" }),
-      undefined,
     );
+    expect(participant.publishTrack).toHaveBeenCalledWith(expect.anything(), {
+      source: Track.Source.ScreenShare,
+    });
   });
 
   it("rejects a publish the device refuses, and forgets the request", async () => {
@@ -453,6 +454,20 @@ function fakeLocalParticipant(): LocalParticipant {
     ),
     setCameraEnabled: vi.fn(async (enabled: boolean) =>
       setEnabled(Track.Source.Camera, enabled),
+    ),
+    createScreenTracks: vi.fn(async (_options?: unknown) =>
+      Promise.resolve([
+        {
+          kind: Track.Kind.Video,
+          source: Track.Source.ScreenShare,
+          mediaStreamTrack: { getSettings: () => ({}) },
+          stop: vi.fn(),
+        },
+      ]),
+    ),
+    publishTrack: vi.fn(
+      async (_track: unknown, options: { source: Track.Source }) =>
+        Promise.resolve(publish(options.source)),
     ),
     setScreenShareEnabled: vi.fn(async (enabled: boolean) => {
       if (enabled) return setEnabled(Track.Source.ScreenShare, true);

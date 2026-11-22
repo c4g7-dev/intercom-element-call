@@ -94,6 +94,7 @@ import {
   screenShareResolution,
 } from "../settings/settings";
 import { Config } from "../config/Config";
+import { closeAllPopouts } from "../tile/popout";
 import { createSentCallNotification$ } from "../state/CallViewModel/CallNotificationLifecycle.ts";
 import { ReactionsReader } from "../reactions/ReactionsReader";
 import { MemberAudioRenderer } from "../tracks/MemberAudioRenderer.tsx";
@@ -199,6 +200,8 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
       {
         ...callViewModelOptionsFromParams(urlParams),
         capture,
+        screenShareEgressBudgetMbps:
+          Config.get().media_quality?.server_egress_budget_mbps ?? 0,
         backgroundEffectsState$,
         hostBridge,
         autoLeaveWhenOthersLeft,
@@ -214,6 +217,8 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
     vm.leave$.pipe(scope.bind()).subscribe(props.onLeft);
 
     return (): void => {
+      // No window of ours outlives the call it showed
+      closeAllPopouts();
       scope.end();
     };
   }, [
@@ -754,7 +759,6 @@ export const InCallView: FC<InCallViewProps> = ({
  * it behaves like the app.
  */
 export function captureSettings(): CaptureSettings {
-  const config = Config.get();
   const cameraSettings = advancedCamera.getValue()
     ? {
         resolution: {
@@ -766,7 +770,6 @@ export function captureSettings(): CaptureSettings {
         codec: cameraCodec.getValue(),
       }
     : undefined;
-  const screenConfig = config.media_quality?.screen_share;
   const screenShareSettings = advancedScreenShare.getValue()
     ? {
         resolution: {
@@ -777,15 +780,9 @@ export function captureSettings(): CaptureSettings {
         maxFramerate: screenShareFramerate.getValue(),
         codec: screenShareCodec.getValue(),
       }
-    : screenConfig?.max_resolution
-      ? {
-          resolution: {
-            width: Math.round((screenConfig.max_resolution * 16) / 9),
-            height: screenConfig.max_resolution,
-            frameRate: screenConfig.max_framerate ?? 30,
-          },
-        }
-      : undefined;
+    : // InterCom: left to the choices made in the share menu (see
+      // `screenShareRequest`), which are read when a share starts
+      undefined;
   return {
     audio: {
       echoCancellation: echoCancellationSetting.getValue(),

@@ -323,6 +323,10 @@ export function mockMediaTrack(
     facingMode$: constant(undefined),
     switchFacingMode: vi.fn(async () => Promise.resolve(undefined)),
     setProcessor: vi.fn(async () => Promise.resolve()),
+    mediaStreamTrack$: constant(undefined),
+    requestHighQuality: vi.fn(() => () => {}),
+    setEncodingLimits: vi.fn(async () => Promise.resolve(true)),
+    dimensions: vi.fn(() => undefined),
     ...track,
   };
 }

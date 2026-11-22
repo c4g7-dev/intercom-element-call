@@ -74,7 +74,7 @@ describe("LivekitConnectionFactory", () => {
 
     expect(options.publishDefaults).toMatchObject({ videoCodec: "vp8" });
     expect(options.videoCaptureDefaults).toMatchObject({
-      resolution: expect.objectContaining({ height: 720 }),
+      resolution: expect.objectContaining({ height: 1080 }),
     });
     expect(options.audioOutput).toEqual({ deviceId: undefined });
     expect(options.e2ee).toBeUndefined();

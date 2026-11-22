@@ -81,7 +81,6 @@
     "hostname": "Hostname: {{hostname}}",
     "livekit_server_info": "LiveKit Server Info",
     "livekit_sfu": "LiveKit SFU: {{url}}",
-    "matrix_id": "Matrix ID: {{id}}",
     "matrixRTCMode": {
       "Comptibility": {
         "description": "Compatible with homeservers that do not support sticky events (but all other EC clients are v0.17.0 or later)",
@@ -93,6 +92,7 @@
       },
       "title": "MatrixRTC mode"
     },
+    "matrix_id": "Matrix ID: {{id}}",
     "mute_all_audio": "Mute all audio (participants, reactions, join sounds)",
     "show_connection_stats": "Show connection statistics",
     "url_params": "URL parameters"
@@ -208,6 +208,31 @@
   "return_home_button": "Return to home screen",
   "room_auth_view_continue_button": "Continue",
   "room_auth_view_ssla_caption": "By clicking \"Join call now\", you agree to our <2>Software and Services License Agreement (SSLA)</2>",
+  "screen_share_options": {
+    "advanced": "Advanced",
+    "audio": "Share audio from",
+    "audio_hint": "Pick an output's monitor to share what you hear. Shared in stereo, without voice processing.",
+    "audio_none": "None",
+    "audio_system": "System audio (if the picker offers it)",
+    "audio_unavailable": "Previously selected device (unavailable)",
+    "codec": "Video codec",
+    "codec_auto": "Auto ({{codec}})",
+    "custom_bitrate": "Custom bitrate (Mbps, 0 = automatic)",
+    "custom_bitrate_warning": "A custom bitrate ignores the server's budget of {{budget}} Mbps, which is shared between the viewers.",
+    "custom_framerate": "Custom frame rate (0 = automatic)",
+    "custom_hint": "Automatic follows the resolution: about 10 Mbps at 1080p and 15 Mbps at 1440p.",
+    "preset": "Optimise for",
+    "preset_low": "Low bandwidth",
+    "preset_low_hint": "720p at 15 fps for a thin uplink.",
+    "preset_motion": "Motion / smooth",
+    "preset_motion_hint": "Video and games at 60 fps, with a higher bitrate.",
+    "preset_sharp": "Text / sharp",
+    "preset_sharp_hint": "Crisp text and interfaces at 30 fps. The resolution is never given up.",
+    "resolution": "Resolution",
+    "resolution_auto": "Auto (native, max 1440p)",
+    "resolution_native": "Native (no cap)",
+    "title": "Share your screen"
+  },
   "screenshare_button_label": "Share screen",
   "settings": {
     "advanced_camera_description": "Configure resolution, framerate, bitrate, and codec for camera video. Changes apply on next call join.",
@@ -290,10 +315,15 @@
     "calling": "Calling…",
     "camera_starting": "Video loading...",
     "collapse": "Collapse",
+    "exit_fullscreen": "Exit fullscreen",
     "expand": "Expand",
+    "fullscreen": "Fullscreen",
     "mute_for_me": "Mute for me",
+    "mute_playback": "Mute for me",
     "muted_for_me": "Muted for me",
+    "pop_out": "Open in a separate window",
     "screen_share_volume": "Screen share volume",
+    "unmute_playback": "Unmute for me",
     "volume": "Volume",
     "waiting_for_media": "Waiting for media..."
   }

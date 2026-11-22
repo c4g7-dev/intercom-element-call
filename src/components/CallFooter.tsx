@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type FC, type JSX, type Ref, useMemo } from "react";
+import { type FC, type JSX, type Ref, useMemo, useState } from "react";
 import classNames from "classnames";
 
 import LogoMark from "../icons/LogoMark.svg?react";
@@ -27,6 +27,7 @@ import { type LayoutSwitchViewModel } from "../state/LayoutSwitchViewModel";
 import { LayoutSwitch } from "../room/LayoutSwitch";
 import { type MediaMenuViewModel } from "./MediaMenuViewModel";
 import { MediaMenuButton } from "./MediaMenuButton";
+import { ScreenShareDialog } from "./ScreenShareDialog";
 
 export interface AudioOutputSwitcher {
   targetOutput: string;
@@ -118,6 +119,7 @@ export const CallFooter: FC<FooterProps> = ({
   const buttonSize = useBehavior(vm.buttonSize$);
   const showLogo = useBehavior(vm.showLogo$);
 
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const buttons: JSX.Element[] = [];
 
   if (openSettings !== undefined) {
@@ -156,7 +158,12 @@ export const CallFooter: FC<FooterProps> = ({
         key="share_screen"
         className={styles.shareScreen}
         enabled={sharingScreen ?? false}
-        onClick={toggleScreenSharing}
+        // Stopping needs no questions; starting asks what to share and how
+        onClick={
+          sharingScreen || !showModals
+            ? toggleScreenSharing
+            : (): void => setShareDialogOpen(true)
+        }
         data-testid="incall_screenshare"
       />,
     );
@@ -242,6 +249,16 @@ export const CallFooter: FC<FooterProps> = ({
       {!hideControls && <div className={styles.buttons}>{buttons}</div>}
       {!hideControls && layoutSwitchVm && (
         <LayoutSwitch vm={layoutSwitchVm} className={styles.layout} />
+      )}
+      {toggleScreenSharing !== undefined && showModals && shareDialogOpen && (
+        <ScreenShareDialog
+          open={shareDialogOpen}
+          onDismiss={() => setShareDialogOpen(false)}
+          onShare={() => {
+            setShareDialogOpen(false);
+            toggleScreenSharing();
+          }}
+        />
       )}
     </div>
   );

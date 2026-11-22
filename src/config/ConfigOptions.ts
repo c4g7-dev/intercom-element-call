@@ -167,6 +167,15 @@ export interface ConfigOptions {
         framerate?: number;
       }>;
     };
+
+    /**
+     * InterCom: how much the media server may send for screen shares, in
+     * Mbit/s. The SFU sends one copy of a share to every viewer, so a share's
+     * bitrate is capped at 80% of this divided by the number of viewers,
+     * followed live as members join and leave. 0 means no budget.
+     * @default 0
+     */
+    server_egress_budget_mbps?: number;
   };
 
   media_devices?: {
@@ -254,22 +263,26 @@ export interface ResolvedConfigOptions extends ConfigOptions {
   ssla: string;
   media_quality: Required<
     Pick<NonNullable<ConfigOptions["media_quality"]>, "video_codec">
-  > & {
-    video: Required<
-      Pick<
-        NonNullable<NonNullable<ConfigOptions["media_quality"]>["video"]>,
-        "max_resolution" | "max_bitrate" | "max_framerate"
-      >
-    >;
-    screen_share: Required<
-      Pick<
-        NonNullable<
-          NonNullable<ConfigOptions["media_quality"]>["screen_share"]
-        >,
-        "max_resolution" | "max_bitrate" | "max_framerate"
-      >
-    >;
-  };
+  > &
+    Pick<
+      NonNullable<ConfigOptions["media_quality"]>,
+      "server_egress_budget_mbps"
+    > & {
+      video: Required<
+        Pick<
+          NonNullable<NonNullable<ConfigOptions["media_quality"]>["video"]>,
+          "max_resolution" | "max_bitrate" | "max_framerate"
+        >
+      >;
+      screen_share: Required<
+        Pick<
+          NonNullable<
+            NonNullable<ConfigOptions["media_quality"]>["screen_share"]
+          >,
+          "max_resolution" | "max_bitrate" | "max_framerate"
+        >
+      >;
+    };
   matrix_rtc_session: ConfigOptions["matrix_rtc_session"] & {
     network_error_retry_ms: number;
     delayed_leave: ResolvedDelayedLeaveTimings;
@@ -282,9 +295,11 @@ export const DEFAULT_CONFIG: ResolvedConfigOptions = {
   ssla: "https://static.element.io/legal/element-software-and-services-license-agreement-uk-1.pdf",
   media_quality: {
     video_codec: "vp8",
+    // InterCom: 1080p at 6 Mbps where upstream sends 720p at 1.7 Mbps. The
+    // simulcast layers are untouched, so small tiles cost what they did.
     video: {
-      max_resolution: 720,
-      max_bitrate: 1_700_000,
+      max_resolution: 1080,
+      max_bitrate: 6_000_000,
       max_framerate: 30,
     },
     screen_share: {

@@ -65,9 +65,9 @@ export interface MediaQuality {
   /** Video codec preference. The server must also have the codec enabled. Default `vp8`. */
   video_codec?: "vp8" | "vp9" | "h264" | "av1";
   video?: {
-    /** Max resolution height in pixels. Default 720. */
+    /** Max resolution height in pixels. Default 1080. */
     max_resolution?: number;
-    /** Max bitrate in bits per second. Default 1700000. */
+    /** Max bitrate in bits per second. Default 6000000. */
     max_bitrate?: number;
     /** Max framerate. Default 30. */
     max_framerate?: number;
@@ -92,7 +92,7 @@ export interface MediaQuality {
 
 export const defaultMediaQuality = {
   video_codec: "vp8",
-  video: { max_resolution: 720, max_bitrate: 1_700_000, max_framerate: 30 },
+  video: { max_resolution: 1080, max_bitrate: 6_000_000, max_framerate: 30 },
   screen_share: {
     max_resolution: 1080,
     max_bitrate: 5_000_000,

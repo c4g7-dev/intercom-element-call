@@ -13,14 +13,14 @@ import { buildLiveKitOptions } from "./livekitOptions";
 describe("buildLiveKitOptions", () => {
   it("returns sensible defaults with no config", () => {
     const opts = buildLiveKitOptions();
-    expect(opts.adaptiveStream).toBe(true);
+    expect(opts.adaptiveStream).toEqual({ pixelDensity: "screen" });
     expect(opts.dynacast).toBe(true);
     expect(opts.videoCaptureDefaults?.resolution).toEqual(
-      VideoPresets.h720.resolution,
+      VideoPresets.h1080.resolution,
     );
     expect(opts.publishDefaults?.videoCodec).toBe("vp8");
     expect(opts.publishDefaults?.videoEncoding).toEqual({
-      maxBitrate: 1_700_000,
+      maxBitrate: 6_000_000,
       maxFramerate: 30,
     });
     expect(opts.publishDefaults?.screenShareEncoding).toEqual({
@@ -28,8 +28,8 @@ describe("buildLiveKitOptions", () => {
       maxFramerate: 30,
     });
     expect(opts.publishDefaults?.videoSimulcastLayers).toEqual([
-      VideoPresets.h180,
       VideoPresets.h360,
+      VideoPresets.h720,
     ]);
   });
 

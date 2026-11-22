@@ -24,10 +24,61 @@ export interface AudioCaptureSettings {
 export type VideoCodec = "vp8" | "h264" | "vp9" | "av1" | "h265";
 
 export interface VideoCaptureSettings {
+  /**
+   * The size to capture at. For a screen share, a width and height of 0 mean
+   * the source's own size, uncapped; `frameRate` still applies.
+   */
   resolution?: { width: number; height: number; frameRate?: number };
   maxBitrate?: number;
   maxFramerate?: number;
   codec?: VideoCodec;
+  /**
+   * In place of `maxBitrate`, a bitrate that follows the size actually
+   * captured, which for a screen share is only known once the user has picked
+   * a source: `base` plus `bitsPerPixel` times the pixels of one frame as it
+   * is sent, kept within `min` and `max`.
+   */
+  autoBitrate?: {
+    base?: number;
+    bitsPerPixel: number;
+    min: number;
+    max: number;
+  };
+  /**
+   * Sends a capture larger than this scaled down, the capture itself staying
+   * as it is. With `integer` the factor is a whole number (2, 3, ...), which
+   * averages whole blocks of pixels and keeps text crisp where a fractional
+   * factor would smear it across the pixel grid. Screen shares only.
+   */
+  fitWithin?: { width: number; height: number; integer?: boolean };
+  /**
+   * What the encoder should favour: `detail` and `text` keep text sharp,
+   * `motion` keeps movement smooth. Screen shares only.
+   */
+  contentHint?: "detail" | "text" | "motion";
+  /** Whether to publish lower-quality layers beside the full one. Default: the backend's choice. */
+  simulcast?: boolean;
+  /** What gives way when the encoder or the uplink cannot keep up. */
+  degradationPreference?:
+    | "maintain-resolution"
+    | "maintain-framerate"
+    | "balanced";
+}
+
+/** Where a screen share's audio comes from. */
+export type ScreenShareAudioSource =
+  /** Whatever the browser's screen picker offers (system or tab audio). */
+  | { kind: "system" }
+  /**
+   * An audio input device, opened without any voice processing and published
+   * as the screen share's audio: on Linux, the monitor of an output device.
+   */
+  | { kind: "device"; deviceId: string };
+
+/** How a published video track is encoded from now on, without republishing. */
+export interface VideoEncodingLimits {
+  maxBitrate?: number;
+  maxFramerate?: number;
 }
 
 /**
@@ -64,8 +115,11 @@ export type PublishRequest =
     }
   | {
       source: "screenShare";
-      /** Whether to capture the screen's audio too. Default true. */
-      audio?: boolean;
+      /**
+       * Whether to capture the screen's audio too, as the browser offers it,
+       * or the source to take it from. Default true.
+       */
+      audio?: boolean | ScreenShareAudioSource;
       capture?: VideoCaptureSettings;
     };
 
@@ -134,6 +188,19 @@ export interface AudioMediaTrack extends MediaTrack {
 
 export interface VideoMediaTrack extends MediaTrack {
   kind: "video";
+  /**
+   * The browser's own track, for rendering where `attach` cannot reach: a
+   * `<video>` in another window. Undefined while there is none (a remote
+   * track before subscription).
+   */
+  mediaStreamTrack$: Behavior<MediaStreamTrack | undefined>;
+  /**
+   * Asks for the best quality the publisher sends, whatever the size of the
+   * elements the track is attached to, and keeps it flowing while no element
+   * is visible. For a tile shown fullscreen or in another window, and for
+   * screen shares. Returns the function that withdraws the request.
+   */
+  requestHighQuality(): () => void;
 }
 
 /** The controls a member has over a track it publishes itself. */
@@ -168,6 +235,13 @@ export interface LocalVideoMediaTrack extends VideoMediaTrack, LocalMediaTrack {
   switchFacingMode(): Promise<string | undefined>;
   /** Background blur and the like; undefined removes the processor. */
   setProcessor(processor: VideoProcessor | undefined): Promise<void>;
+  /**
+   * Changes the limits the track is encoded within, on the live sender.
+   * Resolves false where there is no sender to change yet.
+   */
+  setEncodingLimits(limits: VideoEncodingLimits): Promise<boolean>;
+  /** The size being captured right now; undefined while unknown. */
+  dimensions(): { width: number; height: number } | undefined;
 }
 
 export type EncryptionError = "MissingKey" | "InvalidKey";

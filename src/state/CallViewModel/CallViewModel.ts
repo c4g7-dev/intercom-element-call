@@ -21,6 +21,8 @@ import {
   pauseWhen,
   type PublishRequest,
   type RemoteRTCMember,
+  screenShareBitrate,
+  screenShareScale,
   trackBySource$,
   type TransportMetadata,
   type VideoCaptureSettings,
@@ -81,6 +83,10 @@ import {
 import { type BackgroundEffectsState } from "../BackgroundEffects";
 import { shallowEquals as arrayShallowEquals } from "../../utils/array";
 import { type MediaDevices } from "../MediaDevices";
+import {
+  screenShareLimitsForBudget,
+  screenShareRequest,
+} from "../screenShareOptions";
 import { type MuteStates } from "../MuteStates";
 import {
   followDevice,
@@ -223,6 +229,11 @@ export interface CallViewModelOptions {
    * defaults otherwise.
    */
   capture?: CaptureSettings;
+  /**
+   * How much the media server may send for screen shares, in Mbit/s, shared
+   * between the viewers of ours; 0 or nothing for no budget.
+   */
+  screenShareEgressBudgetMbps?: number;
   /** The background effects state (preparing, supported...) including the processor itself. */
   backgroundEffectsState$?: Behavior<BackgroundEffectsState>;
   /**
@@ -1527,6 +1538,53 @@ export function createCallViewModel$(
   );
 
   const screenShareError$ = new BehaviorSubject<Error | null>(null);
+
+  // How the share that is on was asked to be encoded, for the budget below
+  let screenShareSettings: VideoCaptureSettings | undefined;
+  const startingScreenShare = (): PublishRequest => {
+    // The developer settings win; otherwise what the share menu says now
+    const request = {
+      ...screenShareRequest(),
+      ...(capture.screenShare && { capture: capture.screenShare }),
+    };
+    screenShareSettings = request.capture;
+    return request;
+  };
+
+  // The SFU sends a copy of our share to every viewer: its bitrate follows
+  // the number of them so that the server stays within its uplink
+  const egressBudgetMbps = options.screenShareEgressBudgetMbps ?? 0;
+  if (egressBudgetMbps > 0)
+    combineLatest([
+      screenShare$,
+      rtcParticipation.remoteMembers$.pipe(
+        map((members) => members.length),
+        distinctUntilChanged(),
+      ),
+    ])
+      .pipe(scope.bind())
+      .subscribe(([track, viewers]) => {
+        const settings = screenShareSettings;
+        if (track === undefined || settings === undefined) return;
+        const size = track.dimensions();
+        const scale = screenShareScale(settings, size);
+        const bitrate = screenShareBitrate(settings, size);
+        if (bitrate === undefined || size === undefined) return;
+        const limits = screenShareLimitsForBudget({
+          bitrate,
+          framerate: settings.maxFramerate ?? 30,
+          pixels: (size.width * size.height) / (scale * scale),
+          viewers,
+          budgetMbps: egressBudgetMbps,
+          custom: settings.maxBitrate !== undefined,
+        });
+        logger.info(
+          `Screen share for ${viewers} viewer(s) within ${egressBudgetMbps} Mbps: ${limits.maxBitrate} bps, ${limits.maxFramerate} fps`,
+        );
+        track.setEncodingLimits(limits).catch((e) => {
+          logger.error("Failed to change the screen share's encoding", e);
+        });
+      });
   /**
    * Callback to toggle screen sharing. If null, screen sharing is not possible:
    * the platform cannot capture a screen, or the host hides the button.
@@ -1537,10 +1595,7 @@ export function createCallViewModel$(
       : (): void => {
           const track = screenShare$.value;
           (track === undefined
-            ? rtcParticipation.publish({
-                source: "screenShare",
-                capture: capture.screenShare,
-              })
+            ? rtcParticipation.publish(startingScreenShare())
             : rtcParticipation.unpublish("screenShare")
           ).catch((e: unknown) => {
             logger.error(

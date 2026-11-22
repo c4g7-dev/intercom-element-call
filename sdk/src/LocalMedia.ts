@@ -381,6 +381,14 @@ class CapturedTrack {
         return this.track.getSettings().deviceId;
       },
       setProcessor: async (processor) => this.setProcessor(processor),
+      mediaStreamTrack$: constant(this.shown()),
+      requestHighQuality: () => () => {},
+      // Nothing is encoded before the track is published
+      setEncodingLimits: async () => Promise.resolve(false),
+      dimensions: () => {
+        const { width, height } = this.track.getSettings();
+        return width && height ? { width, height } : undefined;
+      },
     };
   }
 }

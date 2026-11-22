@@ -599,7 +599,6 @@ exports[`DeveloperSettingsTab > renders and matches snapshot 1`] = `
     >
       <input
         aria-describedby="_r_m_"
-        checked=""
         id="autoGainControl"
         type="checkbox"
       />

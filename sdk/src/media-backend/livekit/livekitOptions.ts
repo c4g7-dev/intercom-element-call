@@ -60,7 +60,14 @@ function buildPublishOptions(
         ),
     );
   } else {
-    videoSimulcastLayers = [VideoPresets.h180, VideoPresets.h360];
+    // The layers below the full one, for the viewers whose tile is small. A
+    // camera sent at 1080p or more leaves too wide a gap above 360p, where a
+    // mid-sized tile would look soft, so its layers sit one step higher.
+    const height = videoConf?.max_resolution ?? defaults.video.max_resolution;
+    videoSimulcastLayers =
+      height >= 1080
+        ? [VideoPresets.h360, VideoPresets.h720]
+        : [VideoPresets.h180, VideoPresets.h360];
   }
 
   // Screen share encoding
@@ -117,8 +124,9 @@ export function buildLiveKitOptions(mediaQuality?: MediaQuality): RoomOptions {
   const basePreset = videoPresetForHeight(videoHeight);
 
   return {
-    // automatically manage subscribed video quality
-    adaptiveStream: true,
+    // automatically manage subscribed video quality, by the size of the
+    // elements in device pixels so that a HiDPI screen gets the sharp layer
+    adaptiveStream: { pixelDensity: "screen" },
 
     // optimize publishing bandwidth and CPU for published tracks
     dynacast: true,

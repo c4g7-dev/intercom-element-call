@@ -205,6 +205,43 @@ export const screenShareCodec = new Setting<VideoCodec>(
   "vp9",
 );
 
+// What the user picks when sharing a screen, kept from one share to the next
+export type ScreenSharePreset = "sharp" | "motion" | "low";
+export const screenSharePreset = new Setting<ScreenSharePreset>(
+  "intercom-screen-share-preset",
+  "sharp",
+);
+
+export type ScreenShareResolutionMode = "auto" | "native" | "1440p" | "1080p";
+export const screenShareResolutionMode = new Setting<ScreenShareResolutionMode>(
+  "intercom-screen-share-resolution-mode",
+  "auto",
+);
+
+/** See `DEFAULT_SCREEN_SHARE_CODEC` for why this one. */
+export const screenShareCodecChoice = new Setting<VideoCodec | "auto">(
+  "intercom-screen-share-codec",
+  "auto",
+);
+
+/** `none`, `system` (what the browser's picker offers) or the id of an audio input. */
+export const screenShareAudioSource = new Setting<string>(
+  "intercom-screen-share-audio-source",
+  "system",
+);
+
+/** In Mbps; 0 leaves the bitrate to the preset. */
+export const screenShareCustomBitrate = new Setting<number>(
+  "intercom-screen-share-custom-bitrate",
+  0,
+);
+
+/** 0 leaves the frame rate to the preset. */
+export const screenShareCustomFramerate = new Setting<number>(
+  "intercom-screen-share-custom-framerate",
+  0,
+);
+
 // Camera video quality settings
 export const advancedCamera = new Setting<boolean>("advanced-camera", false);
 

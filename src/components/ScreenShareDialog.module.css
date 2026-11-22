@@ -1,0 +1,75 @@
+/*
+Copyright 2026 Element Creations Ltd.
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+.dialog {
+  max-inline-size: 440px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cpd-space-4x);
+  padding-block-end: var(--cpd-space-2x);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cpd-space-1x);
+}
+
+.field label {
+  font: var(--cpd-font-body-sm-medium);
+  color: var(--cpd-color-text-secondary);
+}
+
+.field select,
+.field input {
+  appearance: auto;
+  block-size: 36px;
+  padding-inline: var(--cpd-space-2x);
+  font: var(--cpd-font-body-md-regular);
+  color: var(--cpd-color-text-primary);
+  background: var(--cpd-color-bg-subtle-secondary);
+  border: 1px solid var(--cpd-color-border-interactive-secondary);
+  border-radius: var(--intercom-radius-control, 8px);
+}
+
+.field select:focus-visible,
+.field input:focus-visible {
+  outline: 2px solid var(--cpd-color-border-focused);
+  outline-offset: 1px;
+}
+
+.field input[data-warning="true"] {
+  border-color: var(--cpd-color-border-critical-primary);
+}
+
+.hint {
+  margin: 0;
+  font: var(--cpd-font-body-xs-regular);
+  color: var(--cpd-color-text-secondary);
+}
+
+.advanced summary {
+  cursor: pointer;
+  font: var(--cpd-font-body-sm-medium);
+  color: var(--cpd-color-text-secondary);
+  margin-block-end: var(--cpd-space-3x);
+}
+
+.advanced[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cpd-space-3x);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--cpd-space-3x);
+}

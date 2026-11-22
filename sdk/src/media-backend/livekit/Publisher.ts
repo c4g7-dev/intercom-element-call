@@ -11,7 +11,7 @@ import {
   LocalVideoTrack,
   ParticipantEvent,
   type Room as LivekitRoom,
-  type Track,
+  Track,
 } from "livekit-client";
 import { type Logger } from "matrix-js-sdk/lib/logger";
 
@@ -25,6 +25,8 @@ import { livekitSources, mediaSources } from "./LivekitMediaTrack";
 import { toLivekitProcessor } from "./videoProcessor";
 import {
   audioCaptureOptions,
+  screenShareAudioDeviceConstraints,
+  screenShareAudioPublishOptions,
   screenShareCaptureOptions,
   screenSharePublishOptions,
   videoCaptureOptions,
@@ -60,6 +62,11 @@ export class Publisher {
   /** A lobby's tracks, taken over at `start`; each leaves the map as it is published. */
   private captured: HandedOverTracks = new Map();
 
+  /** The screen share being started, so that a second request joins the first. */
+  private screenSharePending: Promise<LocalTrackPublication> | undefined;
+  /** The audio device opened to carry a screen share's audio, to be closed with it. */
+  private screenShareAudioDevice: MediaStreamTrack | undefined;
+
   /**
    * @param media - What a lobby opened ahead of the join, published in place
    * of capturing. Taken over only at `start`, so that a publisher torn down
@@ -80,6 +87,11 @@ export class Publisher {
       ParticipantEvent.LocalTrackPublished,
       this.onLocalTrackPublished,
     );
+    this.onLocalTrackUnpublished = this.onLocalTrackUnpublished.bind(this);
+    room.localParticipant.on(
+      ParticipantEvent.LocalTrackUnpublished,
+      this.onLocalTrackUnpublished,
+    );
   }
 
   public async destroy(): Promise<void> {
@@ -87,6 +99,11 @@ export class Publisher {
       ParticipantEvent.LocalTrackPublished,
       this.onLocalTrackPublished,
     );
+    this.room.localParticipant.off(
+      ParticipantEvent.LocalTrackUnpublished,
+      this.onLocalTrackUnpublished,
+    );
+    this.stopScreenShareAudioDevice();
     try {
       for (const { track } of this.publications())
         if (track) await this.room.localParticipant.unpublishTrack(track, true);
@@ -209,15 +226,121 @@ export class Publisher {
         videoCaptureOptions(request),
         videoPublishOptions(request.capture),
       );
-    else
-      publication = await participant.setScreenShareEnabled(
-        true,
-        screenShareCaptureOptions(request),
-        screenSharePublishOptions(request.capture),
-      );
+    else publication = await this.publishScreenShare(request);
     // Until the member has joined, the upstream has to stay paused
     if (!this.shouldPublish) await this.pauseUpstreams();
     return publication;
+  }
+
+  /**
+   * Captures and publishes a screen share. Done in two steps rather than
+   * with LiveKit's `setScreenShareEnabled` so that the encoding can follow
+   * the size the user picked, which is unknown until the capture, and so that
+   * the audio can come from a device of its own.
+   */
+  private async publishScreenShare(
+    request: Extract<PublishRequest, { source: "screenShare" }>,
+  ): Promise<LocalTrackPublication> {
+    this.screenSharePending ??= this.captureAndPublishScreenShare(
+      request,
+    ).finally(() => (this.screenSharePending = undefined));
+    return this.screenSharePending;
+  }
+
+  private async captureAndPublishScreenShare(
+    request: Extract<PublishRequest, { source: "screenShare" }>,
+  ): Promise<LocalTrackPublication> {
+    const participant = this.room.localParticipant;
+    const tracks = await participant.createScreenTracks(
+      screenShareCaptureOptions(request),
+    );
+    const video = tracks.find(
+      (track): track is LocalVideoTrack => track.kind === Track.Kind.Video,
+    );
+    const systemAudio = tracks.find((track) => track.kind === Track.Kind.Audio);
+    if (video === undefined) {
+      for (const track of tracks) track.stop();
+      throw new Error("The screen capture has no video");
+    }
+    let publication: LocalTrackPublication;
+    try {
+      publication = await participant.publishTrack(video, {
+        source: Track.Source.ScreenShare,
+        ...screenSharePublishOptions(
+          request.capture,
+          video.mediaStreamTrack.getSettings(),
+        ),
+      });
+    } catch (e) {
+      for (const track of tracks) track.stop();
+      throw e;
+    }
+    // LiveKit replaces the hint with `motion` for the codecs it publishes
+    // with SVC (VP9, AV1), as a workaround for a frame rate limit in Chrome.
+    // For the others, whatever it was set to is put back.
+    const hint = request.capture?.contentHint;
+    const codec = request.capture?.codec;
+    if (
+      hint !== undefined &&
+      codec !== "vp9" &&
+      codec !== "av1" &&
+      "contentHint" in video.mediaStreamTrack &&
+      video.mediaStreamTrack.contentHint !== hint
+    )
+      video.mediaStreamTrack.contentHint = hint;
+
+    // The audio is an extra: the share goes ahead without it
+    try {
+      if (
+        typeof request.audio === "object" &&
+        request.audio.kind === "device"
+      ) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: screenShareAudioDeviceConstraints(request.audio.deviceId),
+        });
+        const [device] = stream.getAudioTracks();
+        this.screenShareAudioDevice = device;
+        // The share may have been stopped while the device was opened
+        if (participant.getTrackPublication(Track.Source.ScreenShare))
+          await participant.publishTrack(
+            device,
+            screenShareAudioPublishOptions,
+          );
+        else this.stopScreenShareAudioDevice();
+      } else if (systemAudio !== undefined)
+        await participant.publishTrack(
+          systemAudio,
+          screenShareAudioPublishOptions,
+        );
+    } catch (e) {
+      this.logger.error("Failed to publish the screen share's audio", e);
+      systemAudio?.stop();
+      this.stopScreenShareAudioDevice();
+    }
+    return publication;
+  }
+
+  private stopScreenShareAudioDevice(): void {
+    this.screenShareAudioDevice?.stop();
+    this.screenShareAudioDevice = undefined;
+  }
+
+  /**
+   * A screen share ends without us where the user stops it from the
+   * browser's or the desktop's own controls. Its audio, which LiveKit only
+   * takes down with a share it stopped itself, must not outlive it.
+   */
+  private onLocalTrackUnpublished(publication: LocalTrackPublication): void {
+    if (publication.source !== Track.Source.ScreenShare) return;
+    const participant = this.room.localParticipant;
+    const audio = participant.getTrackPublication(
+      Track.Source.ScreenShareAudio,
+    )?.track;
+    if (audio)
+      participant.unpublishTrack(audio, true).catch((e) => {
+        this.logger.error("Failed to stop the screen share's audio", e);
+      });
+    this.stopScreenShareAudioDevice();
   }
 
   public async unpublish(source: MediaSource): Promise<void> {
@@ -225,6 +348,7 @@ export class Publisher {
     // Takes the screen share audio with it
     if (source === "screenShare") {
       await participant.setScreenShareEnabled(false);
+      this.stopScreenShareAudioDevice();
       return;
     }
     const track = participant.getTrackPublication(
