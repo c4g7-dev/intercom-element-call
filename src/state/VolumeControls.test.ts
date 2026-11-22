@@ -6,10 +6,12 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { BehaviorSubject } from "rxjs";
 
 import { constant } from "./Behavior";
 import { ObservableScope } from "./ObservableScope";
 import { createVolumeControls } from "./VolumeControls";
+import { createCallActions } from "./callActions";
 
 let scope: ObservableScope;
 beforeEach(() => {
@@ -97,4 +99,31 @@ test("keeps an adjustment within what can be played", () => {
   c.adjustPlaybackVolume(1.4);
   c.adjustPlaybackVolume(NaN);
   expect(c.sink).toHaveBeenLastCalledWith(1.4);
+});
+
+test("plays nothing while deafened, and what it played before once that ends", () => {
+  const audio = {
+    enabled$: new BehaviorSubject(true),
+    setEnabled$: new BehaviorSubject<((enabled: boolean) => void) | null>(
+      () => {},
+    ),
+  };
+  const actions = createCallActions({
+    audio,
+    video: audio,
+    playSound: () => {},
+  });
+  const c = controls();
+  // Louder than 1, which is played through Web Audio rather than an element
+  c.adjustPlaybackVolume(1.6);
+  expect(c.sink).toHaveBeenLastCalledWith(1.6);
+
+  actions.perform("toggle-deafen", "test");
+  expect(c.sink).toHaveBeenLastCalledWith(0);
+  // The slider keeps showing what the user set
+  expect(c.playbackVolume$.value).toBe(1.6);
+
+  actions.perform("toggle-deafen", "test");
+  expect(c.sink).toHaveBeenLastCalledWith(1.6);
+  actions.reset();
 });

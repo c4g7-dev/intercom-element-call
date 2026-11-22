@@ -11,6 +11,7 @@ import { type Behavior } from "./Behavior";
 import { type ObservableScope } from "./ObservableScope";
 import { accumulate } from "../utils/observable";
 import { diag } from "../diagnostics/diag";
+import { deafened$ } from "./callActions";
 
 /**
  * Controls for audio playback volume.
@@ -153,8 +154,13 @@ export function createVolumeControls(
     // The playback volume, taking into account whether we're supposed to
     // pretend that the audio stream is disconnected (since we don't necessarily
     // want that to modify the UI state).
-    pretendToBeDisconnected$.pipe(
-      switchMap((disconnected) => (disconnected ? of(0) : playbackVolume$)),
+    // Deafened is the same to the ear: nothing is played, whichever way a
+    // track is played (one louder than 1 goes through Web Audio, which a
+    // muted element does not silence).
+    combineLatest([pretendToBeDisconnected$, deafened$]).pipe(
+      switchMap(([disconnected, deafened]) =>
+        disconnected || deafened ? of(0) : playbackVolume$,
+      ),
     ),
   ])
     .pipe(scope.bind())
