@@ -105,6 +105,25 @@ export interface LayoutMediaInputs {
   desktop: boolean;
   /** Every screen share in the call, for the layout that gives each a tile. */
   screenShares?: ScreenShareViewModel[];
+  /**
+   * The key (kind and ID) of the media the user clicked to see large, if any.
+   * It takes the spotlight in whatever layout was chosen, with everyone in the
+   * strip beside it.
+   */
+  focused?: string | null;
+}
+
+/** The media of a focus key among what is in the call. */
+export function findFocusedMedia(
+  focused: string | null | undefined,
+  screenShares: readonly ScreenShareViewModel[],
+  grid: readonly UserMediaViewModel[],
+): ScreenShareViewModel | UserMediaViewModel | undefined {
+  if (!focused) return undefined;
+  return (
+    screenShares.find((m) => `${m.type}:${m.id}` === focused) ??
+    grid.find((m) => `${m.type}:${m.id}` === focused)
+  );
 }
 
 /**
@@ -121,7 +140,24 @@ export function computeLayoutMedia({
   pip,
   desktop,
   screenShares = [],
+  focused,
 }: LayoutMediaInputs): LayoutMedia {
+  // What the user clicked to see large goes before every other choice: the
+  // spotlight is theirs, and the other shares are a page away in it.
+  const focusedMedia = findFocusedMedia(focused, screenShares, grid);
+  if (focusedMedia !== undefined && windowMode !== "pip") {
+    const focusedSpotlight: MediaViewModel[] = [
+      focusedMedia,
+      ...screenShares.filter((m) => m !== focusedMedia),
+    ];
+    return windowMode === "narrow"
+      ? spotlightPortraitLayoutMedia(focusedSpotlight, grid)
+      : spotlightLandscapeLayoutMedia(
+          windowMode === "flat",
+          focusedSpotlight,
+          grid,
+        );
+  }
   // The equal grid is what it says whoever is in the call: no one-on-one
   // layout and no spotlight take its place. A window too flat for a grid gets
   // what the grid layout gets there.

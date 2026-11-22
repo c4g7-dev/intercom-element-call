@@ -35,6 +35,7 @@ import { Menu, MenuItem, Text } from "@vector-im/compound-web";
 import FullScreenMaximiseIcon from "../icons/FullScreenMaximise.svg?react";
 import FullScreenMinimiseIcon from "../icons/FullScreenMinimise.svg?react";
 import { MediaView } from "./MediaView";
+import { focusKey } from "./TileFocus";
 import styles from "./SpotlightTile.module.css";
 import { useInitial } from "../useInitial";
 import { useMergedRefs } from "../useMergedRefs";
@@ -81,6 +82,7 @@ interface SpotlightMemberMediaItemBaseProps extends SpotlightItemBaseProps {
   video: VideoMediaTrack | undefined;
   unencryptedWarning: boolean;
   transport: Transport | undefined;
+  focusId?: string;
 }
 
 interface SpotlightUserMediaItemBaseProps extends SpotlightMemberMediaItemBaseProps {
@@ -203,6 +205,7 @@ const SpotlightMemberMediaItem: FC<SpotlightMemberMediaItemProps> = ({
     video: video ?? undefined,
     unencryptedWarning,
     transport,
+    focusId: focusKey(vm),
     ...props,
   };
 

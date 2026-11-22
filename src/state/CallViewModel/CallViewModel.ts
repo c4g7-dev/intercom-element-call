@@ -115,6 +115,7 @@ import {
 import {
   chooseSpotlightSpeaker,
   computeLayoutMedia,
+  findFocusedMedia,
   computeSpotlight,
   type OneOnOneMedia,
 } from "../layoutMedia.ts";
@@ -457,6 +458,14 @@ export interface CallViewModel {
   showNameTags$: Behavior<boolean>;
   spotlightExpanded$: Behavior<boolean>;
   toggleSpotlightExpanded$: Behavior<(() => void) | null>;
+  /**
+   * The media (its kind and ID) that the user clicked to see large, with the
+   * others in a strip beside it; null when none is.
+   */
+  focusedMedia$: Behavior<string | null>;
+  /** Focuses the media of that key, or lets go of it when it is the focused one. */
+  toggleFocusedMedia: (key: string) => void;
+  clearFocusedMedia: () => void;
   layoutSwitchVm$: Behavior<LayoutSwitchViewModel | null>;
 
   // header/footer visibility
@@ -998,6 +1007,24 @@ export function createCallViewModel$(
     spotlightExpandedToggle$,
   );
 
+  // The media the user clicked to see large (its kind and ID), if any
+  const focusedMedia$ = new BehaviorSubject<string | null>(null);
+  const setFocusedMedia = (key: string | null): void => {
+    if (focusedMedia$.value === key) return;
+    focusedMedia$.next(key);
+    diag("tile_focus", { on: key !== null, kind: key?.split(":")[0] });
+  };
+  // Nothing stays focused that has left the call
+  combineLatest([grid$, screenShares$])
+    .pipe(scope.bind())
+    .subscribe(([grid, screenShares]) => {
+      if (
+        focusedMedia$.value !== null &&
+        findFocusedMedia(focusedMedia$.value, screenShares, grid) === undefined
+      )
+        setFocusedMedia(null);
+    });
+
   const layoutSwitchVm = createLayoutSwitchViewModel(
     scope,
     windowMode$,
@@ -1101,9 +1128,11 @@ export function createCallViewModel$(
       spotlightAndPip$,
       grid$,
       screenShares$,
+      focusedMedia$,
     ).pipe(
       map(() =>
         computeLayoutMedia({
+          focused: focusedMedia$.value,
           screenShares: screenShares$.value,
           windowMode: windowMode$.value,
           layoutMode: layoutSwitchVm.layout$.value,
@@ -1800,6 +1829,10 @@ export function createCallViewModel$(
 
     spotlightExpanded$: spotlightExpanded$,
     toggleSpotlightExpanded$: toggleSpotlightExpanded$,
+    focusedMedia$: focusedMedia$,
+    toggleFocusedMedia: (key: string): void =>
+      setFocusedMedia(focusedMedia$.value === key ? null : key),
+    clearFocusedMedia: (): void => setFocusedMedia(null),
     layoutSwitchVm$: scope.behavior(
       showLayoutSwitch$.pipe(map((show) => (show ? layoutSwitchVm : null))),
     ),

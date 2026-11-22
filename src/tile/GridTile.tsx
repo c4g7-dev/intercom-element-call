@@ -46,6 +46,7 @@ import {
   type VolumeControls,
 } from "../state/VolumeControls";
 import { MediaView } from "./MediaView";
+import { focusKey } from "./TileFocus";
 import { useLatest } from "../useLatest";
 import { type GridTileViewModel } from "../state/TileViewModel";
 import { useMergedRefs } from "../useMergedRefs";
@@ -228,6 +229,7 @@ const UserMediaTileInner: FC<UserMediaTileProps & { menu: ReactNode }> = ({
       rtcBackendIdentity={rtcBackendIdentity}
       targetWidth={targetWidth}
       targetHeight={targetHeight}
+      focusId={focusKey(vm)}
       {...props}
     />
   );

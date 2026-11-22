@@ -39,6 +39,7 @@ import { useRootElement } from "../RootElementContext";
 import { observeElementSize$ } from "../utils/elementSize";
 import styles from "./InCallView.module.css";
 import { GridTile } from "../tile/GridTile";
+import { type TileFocus, TileFocusContext } from "../tile/TileFocus";
 import { SettingsModal, defaultSettingsTab } from "../settings/SettingsModal";
 import { useRageshakeRequestModal } from "../settings/submit-rageshake";
 import { RageshakeRequestModal } from "./RageshakeRequestModal";
@@ -742,6 +743,31 @@ export const InCallView: FC<InCallViewProps> = ({
     <CallFooter className={styles.footer} ref={footerRef} vm={footerVm} />
   );
   const connectedTransports = useBehavior(vm.connectedTransports$);
+  // One click on a tile shows it large; another, or Escape, goes back
+  const tileFocus = useMemo<TileFocus>(
+    () => ({ toggle: vm.toggleFocusedMedia }),
+    [vm],
+  );
+  const focusedMedia = useBehavior(vm.focusedMedia$);
+  useEffect(() => {
+    if (focusedMedia === null) return;
+    const onKeyDown = (e: KeyboardEvent): void => {
+      // Escape is first of all for whatever is open: a menu, a dialog, a
+      // tile that fills the screen
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.fullscreenElement) return;
+      if (
+        document.querySelector(
+          "[role='dialog'], [role='menu'], [role='listbox']",
+        ) !== null
+      )
+        return;
+      vm.clearFocusedMedia();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return (): void => window.removeEventListener("keydown", onKeyDown);
+  }, [focusedMedia, vm]);
+
   const localMember = useBehavior(vm.localMember$);
   const localTransport = useBehavior(
     localMember?.transport$ ?? constant(undefined),
@@ -775,7 +801,9 @@ export const InCallView: FC<InCallViewProps> = ({
         </div>
       )}
       <MemberAudioRenderer members={remoteMembers} muted={muteAllAudio} />
-      {renderContent()}
+      <TileFocusContext.Provider value={tileFocus}>
+        {renderContent()}
+      </TileFocusContext.Provider>
       <CallEventAudioRenderer vm={vm} muted={muteAllAudio} />
       <ReactionsAudioRenderer vm={vm} muted={muteAllAudio} />
       <RingingAudioRenderer vm={ringingVm} muted={muteAllAudio} />

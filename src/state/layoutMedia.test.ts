@@ -255,3 +255,94 @@ describe("computeLayoutMedia", () => {
     expect(layout({ windowMode: "pip", desktop: true }).edgeToEdge).toBe(false);
   });
 });
+
+describe("computeLayoutMedia with a focused tile", () => {
+  const me = { type: "user", local: true, id: "me" } as LocalUserMediaViewModel;
+  const ann = {
+    type: "user",
+    local: false,
+    id: "ann",
+  } as RemoteUserMediaViewModel;
+  const ben = {
+    type: "user",
+    local: false,
+    id: "ben",
+  } as RemoteUserMediaViewModel;
+  const share = {
+    type: "screen share",
+    local: false,
+    id: "ann",
+  } as ScreenShareViewModel;
+  const base: LayoutMediaInputs = {
+    windowMode: "normal",
+    layoutMode: "grid",
+    spotlightExpanded: false,
+    oneOnOne: null,
+    localVideoEnabled: true,
+    spotlight: [ann],
+    grid: [me, ann, ben],
+    pip: me,
+    desktop: true,
+    screenShares: [],
+  };
+
+  it("puts the focused member in the spotlight with everyone in the strip", () => {
+    expect(computeLayoutMedia({ ...base, focused: "user:ben" })).toEqual({
+      type: "spotlight-landscape",
+      edgeToEdge: false,
+      spotlight: [ben],
+      grid: [me, ann, ben],
+    });
+  });
+
+  it("takes the place of the equal grid and of a one-on-one layout", () => {
+    expect(
+      computeLayoutMedia({
+        ...base,
+        layoutMode: "equal-grid",
+        focused: "user:ann",
+      }).type,
+    ).toBe("spotlight-landscape");
+    expect(
+      computeLayoutMedia({
+        ...base,
+        grid: [me, ann],
+        oneOnOne: { local: me, remote: ann },
+        focused: "user:me",
+      }),
+    ).toMatchObject({ type: "spotlight-landscape", spotlight: [me] });
+  });
+
+  it("tells a member's screen share from the member, and keeps other shares a page away", () => {
+    const other = {
+      type: "screen share",
+      local: false,
+      id: "ben",
+    } as ScreenShareViewModel;
+    const inputs = { ...base, screenShares: [share, other] };
+    expect(
+      computeLayoutMedia({ ...inputs, focused: "screen share:ben" }),
+    ).toMatchObject({ spotlight: [other, share] });
+    expect(
+      computeLayoutMedia({ ...inputs, focused: "user:ann" }),
+    ).toMatchObject({ spotlight: [ann, share, other] });
+  });
+
+  it("uses the portrait spotlight in a narrow window and leaves a PiP alone", () => {
+    expect(
+      computeLayoutMedia({ ...base, windowMode: "narrow", focused: "user:ben" })
+        .type,
+    ).toBe("spotlight-portrait");
+    expect(
+      computeLayoutMedia({ ...base, windowMode: "pip", focused: "user:ben" })
+        .type,
+    ).toBe("pip");
+  });
+
+  it("falls back to the chosen layout when the focused media is gone", () => {
+    expect(computeLayoutMedia({ ...base, focused: "user:gone" }).type).toBe(
+      "grid",
+    );
+    expect(computeLayoutMedia({ ...base, focused: null }).type).toBe("grid");
+  });
+});

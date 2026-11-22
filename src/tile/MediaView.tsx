@@ -37,6 +37,7 @@ import { autoVideoFit } from "../utils/videoFit";
 import { type Transport } from "matrix-js-sdk/lib/matrixrtc";
 import { type VolumeControls } from "../state/VolumeControls";
 import { TileActions, useFullscreen } from "./TileActions";
+import { useFocusClick } from "./TileFocus";
 import { useMergedRefs } from "../useMergedRefs";
 
 interface Props extends ComponentProps<typeof animated.div> {
@@ -67,6 +68,11 @@ interface Props extends ComponentProps<typeof animated.div> {
   raisedHandTime?: Date;
   currentReaction?: ReactionOption;
   raisedHandOnClick?: () => void;
+  /**
+   * The key the tile's media is focused by. With it, one click on the tile
+   * shows the media large and the next one goes back.
+   */
+  focusId?: string;
   waitingForMedia?: boolean;
   audioStreamStats?: RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats;
   videoStreamStats?: RTCInboundRtpStreamStats | RTCOutboundRtpStreamStats;
@@ -112,6 +118,7 @@ export const MediaView: FC<Props> = ({
   raisedHandTime,
   currentReaction,
   raisedHandOnClick,
+  focusId,
   waitingForMedia,
   audioStreamStats,
   videoStreamStats,
@@ -124,6 +131,7 @@ export const MediaView: FC<Props> = ({
   const tileElement = useRef<HTMLDivElement | null>(null);
   const mergedRef = useMergedRefs(tileElement, ref);
   const [fullscreen, toggleFullscreen] = useFullscreen(tileElement);
+  const focusClick = useFocusClick(focusId);
   const shownVideo = video && videoEnabled ? video : undefined;
   const { t } = useTranslation();
   const [handRaiseTimerVisible] = useSetting(showHandRaisedTimer);
@@ -186,6 +194,7 @@ export const MediaView: FC<Props> = ({
       ref={mergedRef}
       data-fullscreen={fullscreen}
       onDoubleClick={shownVideo ? toggleFullscreen : undefined}
+      {...focusClick}
       data-testid="videoTile"
       data-video-enabled={video && videoEnabled}
       data-video-fit={
