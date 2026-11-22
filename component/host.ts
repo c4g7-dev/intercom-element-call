@@ -18,7 +18,7 @@ Please see LICENSE in the repository root for full details.
  */
 
 import { type Ref, useEffect, useImperativeHandle } from "react";
-import { ReplaySubject, Subject } from "rxjs";
+import { NEVER, ReplaySubject, Subject } from "rxjs";
 
 import {
   type DeviceMuteRequest,
@@ -157,6 +157,9 @@ export function useComponentHostBridge(
     notifyDeviceMute: async (state) => {
       await latest.current.notifyDeviceMute?.(state);
     },
+    // A host of the component has the call in its own page: its shortcuts
+    // reach the call by themselves
+    callAction$: NEVER,
     // Whether these exist is itself information, so they are read through
     // rather than wrapped unconditionally
     get close() {

@@ -29,14 +29,22 @@ describe("DiagnosticsOverlay", () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it("is toggled by Ctrl+Shift+D and by its close button", () => {
+  it("is toggled by Ctrl+Alt+D and by its close button", () => {
     render(<DiagnosticsOverlay />);
     expect(screen.queryByTestId("diagnostics_overlay")).toBeNull();
 
+    // Ctrl+Shift+D is deafen now
     fireEvent.keyDown(document.body, {
       key: "D",
       ctrlKey: true,
       shiftKey: true,
+    });
+    expect(screen.queryByTestId("diagnostics_overlay")).toBeNull();
+
+    fireEvent.keyDown(document.body, {
+      key: "d",
+      ctrlKey: true,
+      altKey: true,
     });
     expect(screen.getByTestId("diagnostics_overlay")).toBeVisible();
     expect(diagnosticsOverlay.getValue()).toBe(true);

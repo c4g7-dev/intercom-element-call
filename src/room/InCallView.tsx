@@ -26,6 +26,14 @@ import { useTranslation } from "react-i18next";
 import { Header, LeftNav, RightNav, RoomHeaderInfo } from "../Header";
 import { HeaderStyle, useUrlParams } from "../UrlParams";
 import { useCallViewKeyboardShortcuts } from "../useCallViewKeyboardShortcuts";
+import {
+  type CallAction,
+  createCallActions,
+  deafened$,
+  isCallAction,
+} from "../state/callActions";
+import { diag } from "../diagnostics/diag";
+import { VolumeOffSolidIcon } from "@vector-im/compound-design-tokens/assets/web/icons";
 import { useHostBridge } from "../HostBridge.ts";
 import { useRootElement } from "../RootElementContext";
 import { observeElementSize$ } from "../utils/elementSize";
@@ -336,17 +344,49 @@ export const InCallView: FC<InCallViewProps> = ({
 
   const { showControls, header: headerStyle } = useUrlParams();
 
-  const muteAllAudio = useBehavior(muteAllAudio$);
+  const muteAllAudioSetting = useBehavior(muteAllAudio$);
+  // Deafened is every incoming sound of the call off, whatever the setting
+  const deafened = useBehavior(deafened$);
+  const muteAllAudio = muteAllAudioSetting || deafened;
   const toggleAudio = useBehavior(muteStates.audio.toggle$);
   const toggleVideo = useBehavior(muteStates.video.toggle$);
   const setAudioEnabled = useBehavior(muteStates.audio.setEnabled$);
 
+  // Mute, deafen and camera, from the keyboard and from the host (whose
+  // shortcuts also work while its window does not have the focus)
+  const callActions = useMemo(
+    () =>
+      createCallActions({ audio: muteStates.audio, video: muteStates.video }),
+    [muteStates],
+  );
+  useEffect(() => callActions.reset, [callActions]);
+  const hostBridgeForActions = useHostBridge();
+  useEffect(() => {
+    const subscription = hostBridgeForActions.callAction$.subscribe(
+      (request) => {
+        const action = request.data?.action;
+        if (isCallAction(action))
+          request.reply(callActions.perform(action, "host"));
+        else {
+          // Not something this version knows: nothing is done about it
+          diag("call_action", { action: "unknown", source: "host" });
+          request.reply(callActions.state());
+        }
+      },
+    );
+    return (): void => subscription.unsubscribe();
+  }, [hostBridgeForActions, callActions]);
+  const performCallAction = useCallback(
+    (action: CallAction) => void callActions.perform(action, "keyboard"),
+    [callActions],
+  );
   useCallViewKeyboardShortcuts(
     toggleAudio,
     toggleVideo,
     setAudioEnabled,
     (reaction) => void sendReaction(reaction),
     () => void toggleRaisedHand(),
+    performCallAction,
   );
 
   const ringingVm = useBehavior(vm.ringingVm$);
@@ -724,6 +764,16 @@ export const InCallView: FC<InCallViewProps> = ({
       onPointerOut={onPointerOut}
     >
       {header}
+      {deafened && (
+        <div
+          className={styles.deafened}
+          role="status"
+          data-testid="deafened_indicator"
+        >
+          <VolumeOffSolidIcon aria-hidden width={20} height={20} />
+          {t("deafened_indicator")}
+        </div>
+      )}
       <MemberAudioRenderer members={remoteMembers} muted={muteAllAudio} />
       {renderContent()}
       <CallEventAudioRenderer vm={vm} muted={muteAllAudio} />

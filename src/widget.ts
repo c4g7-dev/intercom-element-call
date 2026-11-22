@@ -44,6 +44,10 @@ export enum ElementWidgetActions {
   //   video_enabled?: boolean
   // }
   DeviceMute = "io.element.device_mute",
+  // InterCom, toWidget: a shortcut of the host's (also from outside its
+  // window) asks for `{ action }`, one of the call actions; the reply is
+  // `{ audio_enabled, video_enabled, deafened }`
+  CallAction = "io.intercom.call_action",
 }
 
 export interface JoinCallData {
@@ -104,6 +108,7 @@ export const initializeWidget = (
         ElementWidgetActions.JoinCall,
         ElementWidgetActions.HangupCall,
         ElementWidgetActions.DeviceMute,
+        ElementWidgetActions.CallAction,
       ].forEach((action) => {
         api.on(`action:${action}`, (ev: CustomEvent<IWidgetApiRequest>) => {
           ev.preventDefault();

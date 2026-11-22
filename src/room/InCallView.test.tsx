@@ -14,8 +14,20 @@ import {
   type MockedFunction,
   vi,
 } from "vitest";
-import { act, render, type RenderResult } from "@testing-library/react";
-import { BehaviorSubject } from "rxjs";
+import {
+  act,
+  fireEvent,
+  render,
+  type RenderResult,
+} from "@testing-library/react";
+import { BehaviorSubject, Subject } from "rxjs";
+import {
+  type HostBridge,
+  HostBridgeProvider,
+  type HostRequest,
+  nullHostBridge,
+} from "../HostBridge";
+import { type CallActionState, deafened$ } from "../state/callActions";
 import { BrowserRouter } from "react-router-dom";
 import { TooltipProvider } from "@vector-im/compound-web";
 import userEvent from "@testing-library/user-event";
@@ -130,6 +142,7 @@ interface CreateInCallViewArgs {
   callViewModelOptions?: Partial<CallViewModelOptions>;
   /** If true, wraps the rendered tree in an AppBar provider */
   withAppBar?: boolean;
+  hostBridge?: HostBridge;
 }
 function createInCallView(args: CreateInCallViewArgs = {}): RenderResult & {
   rtcSession: MockRTCSession;
@@ -163,7 +176,12 @@ function createInCallView(args: CreateInCallViewArgs = {}): RenderResult & {
     />
   );
 
-  const content = args.withAppBar ? <AppBar>{inCallView}</AppBar> : inCallView;
+  const withBar = args.withAppBar ? <AppBar>{inCallView}</AppBar> : inCallView;
+  const content = args.hostBridge ? (
+    <HostBridgeProvider value={args.hostBridge}>{withBar}</HostBridgeProvider>
+  ) : (
+    withBar
+  );
 
   const renderResult = render(
     <BrowserRouter>
@@ -340,5 +358,72 @@ describe("ActiveCall", () => {
       window.ResizeObserver = originalResizeObserver;
       root.remove();
     }
+  });
+});
+
+describe("InCallView call actions", () => {
+  const lastAudioMuted = (): boolean | undefined =>
+    (MemberAudioRenderer as MockedFunction<typeof MemberAudioRenderer>).mock
+      .lastCall?.[0].muted;
+
+  it("deafens on the host's request, says so, and undeafens on the shortcut", () => {
+    const callAction$ = new Subject<
+      HostRequest<{ action?: unknown }, CallActionState>
+    >();
+    const { queryByTestId, getByTestId } = createInCallView({
+      hostBridge: { ...nullHostBridge, callAction$ },
+    });
+    expect(queryByTestId("deafened_indicator")).toBeNull();
+    expect(lastAudioMuted()).toBe(false);
+
+    const reply = vi.fn();
+    act(() => callAction$.next({ data: { action: "toggle-deafen" }, reply }));
+    expect(reply).toHaveBeenCalledWith(
+      expect.objectContaining({ deafened: true }),
+    );
+    expect(getByTestId("deafened_indicator")).toBeVisible();
+    expect(lastAudioMuted()).toBe(true);
+
+    act(() => {
+      fireEvent.keyDown(document.body, {
+        key: "D",
+        ctrlKey: true,
+        shiftKey: true,
+      });
+    });
+    expect(queryByTestId("deafened_indicator")).toBeNull();
+    expect(lastAudioMuted()).toBe(false);
+  });
+
+  it("does nothing about an action it does not know, and still answers", () => {
+    const callAction$ = new Subject<
+      HostRequest<{ action?: unknown }, CallActionState>
+    >();
+    const { queryByTestId } = createInCallView({
+      hostBridge: { ...nullHostBridge, callAction$ },
+    });
+    const reply = vi.fn();
+    act(() => callAction$.next({ data: { action: "self-destruct" }, reply }));
+    act(() => callAction$.next({ data: {}, reply }));
+    expect(reply).toHaveBeenCalledTimes(2);
+    expect(reply).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deafened: false }),
+    );
+    expect(queryByTestId("deafened_indicator")).toBeNull();
+  });
+
+  it("is no longer deafened once the call view is gone", () => {
+    const callAction$ = new Subject<
+      HostRequest<{ action?: unknown }, CallActionState>
+    >();
+    const { unmount } = createInCallView({
+      hostBridge: { ...nullHostBridge, callAction$ },
+    });
+    act(() =>
+      callAction$.next({ data: { action: "toggle-deafen" }, reply: vi.fn() }),
+    );
+    expect(deafened$.value).toBe(true);
+    unmount();
+    expect(deafened$.value).toBe(false);
   });
 });

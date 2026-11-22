@@ -121,6 +121,11 @@ describe("createWidgetHostBridge", () => {
         (bridge) => bridge.deviceMute$,
         ElementWidgetActions.DeviceMute,
       ],
+      [
+        "callAction$",
+        (bridge) => bridge.callAction$,
+        ElementWidgetActions.CallAction,
+      ],
     ];
 
     test.each(inboundStreams)(

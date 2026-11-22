@@ -114,3 +114,23 @@ spotlight tile is maximised and displaying video, apply a gradient background. *
   position: relative;
   flex-grow: 1;
 }
+
+/* Over the call, where it cannot be missed: nobody is heard and nobody hears */
+.deafened {
+  position: fixed;
+  z-index: 3;
+  inset-block-start: var(--cpd-space-4x);
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: calc(100% - var(--cpd-space-8x));
+  display: flex;
+  align-items: center;
+  gap: var(--cpd-space-2x);
+  padding: var(--cpd-space-2x) var(--cpd-space-4x);
+  border-radius: var(--intercom-radius-control, 8px);
+  background: var(--cpd-color-bg-critical-primary);
+  color: var(--cpd-color-text-on-solid-primary);
+  font: var(--cpd-font-body-sm-medium);
+  pointer-events: none;
+}

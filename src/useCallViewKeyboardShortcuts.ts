@@ -5,6 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
+import { type CallAction, callActionForKey } from "./state/callActions";
 import { useCallback, useMemo, useRef } from "react";
 import { logger } from "matrix-js-sdk/lib/logger";
 
@@ -78,6 +79,7 @@ const KeyToReactionMap: Record<string, ReactionOption> = Object.fromEntries(
  * @param setAudioEnabled - push to talk behavior controlled via (space)
  * @param sendReaction - triggered on (1,2,3,...)
  * @param toggleHandRaised - triggered on (h)
+ * @param performCallAction - triggered on (Ctrl+Shift+M), (Ctrl+Shift+D) and (Ctrl+Shift+V): mute, deafen, camera
  * Additionally this method listens to the (escape) key to trigger the onBackButtonPressed callback, which is used to navigate to pip in the native app.
  *
  * Note: This function incorrectly assumes that there is a camera and microphone, which is not always the case.
@@ -89,6 +91,7 @@ export function useCallViewKeyboardShortcuts(
   setAudioEnabled: ((enabled: boolean) => void) | null,
   sendReaction: ((reaction: ReactionOption) => void) | null,
   toggleHandRaised: (() => void) | null,
+  performCallAction: ((action: CallAction) => void) | null = null,
 ): void {
   const spacebarHeld = useRef(false);
   const rootElement = useRootElement();
@@ -103,6 +106,15 @@ export function useCallViewKeyboardShortcuts(
     useCallback(
       (event: KeyboardEvent) => {
         logger.info("Keydown event", event);
+        // The shortcuts with Ctrl+Shift are the same ones the host answers
+        // while the call does not have the focus, so they work wherever the
+        // focus is in the call, dialogs and text fields included
+        const callAction = callActionForKey(event);
+        if (callAction !== undefined && performCallAction !== null) {
+          event.preventDefault();
+          if (!event.repeat) performCallAction(callAction);
+          return;
+        }
         if (focusIsClaimed()) return;
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
           return;
@@ -136,6 +148,7 @@ export function useCallViewKeyboardShortcuts(
         setAudioEnabled,
         sendReaction,
         toggleHandRaised,
+        performCallAction,
       ],
     ),
     // Because this is set on an ancestor, to prevent shortcuts from activating

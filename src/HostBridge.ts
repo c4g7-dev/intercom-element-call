@@ -18,6 +18,7 @@ import {
   type JoinCallData,
   type WidgetHelpers,
 } from "./widget";
+import { type CallActionState } from "./state/callActions";
 
 // Note: these are type aliases rather than interfaces so that they satisfy the
 // widget API's index-signature payload types.
@@ -95,6 +96,11 @@ export interface HostBridge {
   hangUp$: Observable<HostRequest<Record<string, never>>>;
   /** The host wants to change, or read back, the device mute state. */
   deviceMute$: Observable<HostRequest<DeviceMuteRequest, DeviceMuteState>>;
+  /**
+   * The host passes on a call action from a shortcut of its own, which may
+   * have been pressed outside its window: mute, deafen, camera.
+   */
+  callAction$: Observable<HostRequest<{ action?: unknown }, CallActionState>>;
 
   // What the host is, and is capable of.
 
@@ -242,6 +248,7 @@ export const nullHostBridge: HostBridge = {
   join$: NEVER,
   hangUp$: NEVER,
   deviceMute$: NEVER,
+  callAction$: NEVER,
   // Standalone, the account is Element Call's own: it signed the user in, so
   // it may offer to change the profile.
   supportsProfileChanges: true,
@@ -302,6 +309,7 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
     join$: requests(ElementWidgetActions.JoinCall),
     hangUp$: requests(ElementWidgetActions.HangupCall),
     deviceMute$: requests(ElementWidgetActions.DeviceMute),
+    callAction$: requests(ElementWidgetActions.CallAction),
     // The client we are a widget of signed the user in, so the profile is its
     // to manage
     supportsProfileChanges: false,

@@ -23,7 +23,8 @@ import { openTestPattern } from "./testPattern";
 import { type TrackRecord } from "./trackStats";
 
 /**
- * The diagnostics overlay and its shortcut, Ctrl+Shift+D. Draws nothing
+ * The diagnostics overlay and its shortcut, Ctrl+Alt+D (Ctrl+Shift+D is
+ * deafen). Draws nothing
  * while the overlay is off.
  */
 export const DiagnosticsOverlay: FC = () => {
@@ -36,8 +37,8 @@ export const DiagnosticsOverlay: FC = () => {
       (event: KeyboardEvent) => {
         if (
           !event.ctrlKey ||
-          !event.shiftKey ||
-          event.altKey ||
+          !event.altKey ||
+          event.shiftKey ||
           event.key.toLowerCase() !== "d"
         )
           return;

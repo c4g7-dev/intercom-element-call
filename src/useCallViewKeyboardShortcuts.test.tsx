@@ -29,6 +29,7 @@ interface TestComponentProps {
   onButtonClick?: () => void;
   sendReaction?: () => void;
   toggleHandRaised?: () => void;
+  performCallAction?: (action: string) => void;
   initialModalOpen?: boolean;
 }
 
@@ -37,6 +38,7 @@ const TestComponent: FC<TestComponentProps> = ({
   onButtonClick = (): void => {},
   sendReaction = (reaction: ReactionOption): void => {},
   toggleHandRaised = (): void => {},
+  performCallAction,
   initialModalOpen = false,
 }) => {
   const [modalOpen, setModalOpen] = useState(initialModalOpen);
@@ -46,6 +48,7 @@ const TestComponent: FC<TestComponentProps> = ({
     setAudioEnabled,
     sendReaction,
     toggleHandRaised,
+    performCallAction ?? null,
   );
   return (
     <>
@@ -266,4 +269,37 @@ test("only hears keys pressed within its root element", async () => {
   getByRole("button", { name: "TEST" }).focus();
   await user.keyboard("h");
   expect(toggleHandRaised).toHaveBeenCalledOnce();
+});
+
+test("Ctrl+Shift+M, D and V are mute, deafen and camera, even from inside a dialog", async () => {
+  const user = userEvent.setup();
+  const performCallAction = vi.fn();
+  const setAudioEnabled = vi.fn();
+  const { getByText } = render(
+    <TestComponent
+      performCallAction={performCallAction}
+      setAudioEnabled={setAudioEnabled}
+      initialModalOpen
+    />,
+  );
+  await user.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
+  await user.keyboard("{Control>}{Shift>}D{/Shift}{/Control}");
+  await user.click(getByText("InModalButton"));
+  await user.keyboard("{Control>}{Shift>}v{/Shift}{/Control}");
+  expect(performCallAction.mock.calls.map(([action]) => action)).toEqual([
+    "toggle-mute",
+    "toggle-deafen",
+    "toggle-camera",
+  ]);
+  // Not with Alt as well, which is the diagnostics overlay's
+  await user.keyboard("{Control>}{Alt>}d{/Alt}{/Control}");
+  expect(performCallAction).toHaveBeenCalledTimes(3);
+});
+
+test("a plain m still toggles the microphone the old way, not through a call action", async () => {
+  const user = userEvent.setup();
+  const performCallAction = vi.fn();
+  render(<TestComponent performCallAction={performCallAction} />);
+  await user.keyboard("m");
+  expect(performCallAction).not.toHaveBeenCalled();
 });

@@ -63,6 +63,7 @@
     "username": "Username",
     "video": "Video"
   },
+  "deafened_indicator": "Deafened: you hear nobody and nobody hears you (Ctrl+Shift+D)",
   "developer_mode": {
     "always_show_iphone_earpiece": "Show iPhone earpiece option on all platforms",
     "crypto_version": "Crypto version: {{version}}",
@@ -312,7 +313,7 @@
     "preferences_tab": {
       "developer_mode_label": "Developer mode",
       "developer_mode_label_description": "Enable developer mode and show developer settings tab.",
-      "diagnostics_description": "Show live statistics for every track over the call. Ctrl+Shift+D toggles it.",
+      "diagnostics_description": "Show live statistics for every track over the call. Ctrl+Alt+D toggles it.",
       "diagnostics_label": "Diagnostics",
       "introduction": "Here you can configure extra options for an improved experience.",
       "reactions_play_sound_description": "Play a sound effect when anyone sends a reaction into a call.",
