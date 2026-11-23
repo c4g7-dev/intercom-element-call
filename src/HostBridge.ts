@@ -18,7 +18,11 @@ import {
   type JoinCallData,
   type WidgetHelpers,
 } from "./widget";
-import { type CallActionState } from "./state/callActions";
+import {
+  type CallActionState,
+  type HostVoiceState,
+  parseHostVoiceState,
+} from "./state/callActions";
 import { type HostCallState } from "./state/hostCallState";
 
 // Note: these are type aliases rather than interfaces so that they satisfy the
@@ -84,6 +88,12 @@ export interface HostBridge {
    */
   notifyCallState(state: HostCallState): Promise<void>;
   /**
+   * Asks the host for the user's mute and deafen, which a host that keeps
+   * them (InterCom) has also outside a call: the call is joined with them.
+   * Resolves to undefined where there is no such host.
+   */
+  requestVoiceState(): Promise<HostVoiceState | undefined>;
+  /**
    * Asks the host to close Element Call, and stops communicating with it. No
    * further calls should be made on this bridge afterwards.
    *
@@ -108,6 +118,11 @@ export interface HostBridge {
    * have been pressed outside its window: mute, deafen, camera.
    */
   callAction$: Observable<HostRequest<{ action?: unknown }, CallActionState>>;
+  /**
+   * The host's mute and deafen changed (its own buttons and shortcuts, which
+   * also work without a call): the call takes them.
+   */
+  voiceState$: Observable<HostRequest<unknown, CallActionState>>;
 
   // What the host is, and is capable of.
 
@@ -252,11 +267,13 @@ export const nullHostBridge: HostBridge = {
   notifyHungUp: async () => {},
   notifyDeviceMute: async () => {},
   notifyCallState: async () => {},
+  requestVoiceState: async () => await Promise.resolve(undefined),
   themeChange$: NEVER,
   join$: NEVER,
   hangUp$: NEVER,
   deviceMute$: NEVER,
   callAction$: NEVER,
+  voiceState$: NEVER,
   // Standalone, the account is Element Call's own: it signed the user in, so
   // it may offer to change the profile.
   supportsProfileChanges: true,
@@ -305,6 +322,16 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
       send(ElementWidgetActions.DeviceMute, state),
     notifyCallState: async (state) =>
       send(ElementWidgetActions.CallState, state),
+    requestVoiceState: async () => {
+      try {
+        return parseHostVoiceState(
+          await widget.api.transport.send(ElementWidgetActions.VoiceState, {}),
+        );
+      } catch {
+        // A host that is not InterCom does not know the message
+        return undefined;
+      }
+    },
     close: async () => {
       try {
         await send(ElementWidgetActions.Close);
@@ -320,6 +347,7 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
     hangUp$: requests(ElementWidgetActions.HangupCall),
     deviceMute$: requests(ElementWidgetActions.DeviceMute),
     callAction$: requests(ElementWidgetActions.CallAction),
+    voiceState$: requests(ElementWidgetActions.VoiceState),
     // The client we are a widget of signed the user in, so the profile is its
     // to manage
     supportsProfileChanges: false,

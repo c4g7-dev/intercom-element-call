@@ -13,6 +13,7 @@ import {
   createCallActions,
   deafened$,
   isCallAction,
+  parseHostVoiceState,
 } from "./callActions";
 import { diagBuffer, diagOutput, resetDiag } from "../diagnostics/diag";
 
@@ -239,5 +240,136 @@ describe("createCallActions", () => {
       ["toggle-deafen", "host", true],
       ["toggle-mute", "keyboard", false],
     ]);
+  });
+});
+
+describe("the host's mute and deafen", () => {
+  const voice = (
+    muted: boolean,
+    deafened = false,
+    before = false,
+  ): { muted: boolean; deafened: boolean; muted_before_deafen: boolean } => ({
+    muted,
+    deafened,
+    muted_before_deafen: before,
+  });
+
+  it("reads what the host sends and nothing else", () => {
+    expect(parseHostVoiceState(voice(true))).toEqual(voice(true));
+    // Deafened is muted
+    expect(parseHostVoiceState({ muted: false, deafened: true })).toEqual(
+      voice(true, true),
+    );
+    for (const other of [undefined, null, {}, { muted: "yes" }, "muted", 1])
+      expect(parseHostVoiceState(other)).toBeUndefined();
+  });
+
+  it("joins muted where the host says so, silently", () => {
+    const { actions, audio, playSound } = start(true);
+    expect(actions.applyVoiceState(voice(true), "host-join")).toMatchObject({
+      audio_enabled: false,
+      deafened: false,
+    });
+    expect(audio.enabled$.value).toBe(false);
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it("joins deafened where the host says so, and undeafens as the host has it", () => {
+    const { actions, audio } = start(true);
+    actions.applyVoiceState(voice(true, true, false), "host-join");
+    expect(deafened$.value).toBe(true);
+    expect(audio.enabled$.value).toBe(false);
+    // Undeafened by the call's own shortcut: the microphone was on before
+    actions.perform("toggle-deafen", "keyboard");
+    expect(deafened$.value).toBe(false);
+    expect(audio.enabled$.value).toBe(true);
+
+    actions.applyVoiceState(voice(true, true, true), "host");
+    actions.perform("toggle-deafen", "keyboard");
+    expect(deafened$.value).toBe(false);
+    expect(audio.enabled$.value).toBe(false);
+  });
+
+  it("leaves a microphone that is on alone where the host says unmuted", () => {
+    const { actions, audio } = start(true);
+    const set = vi.fn();
+    audio.setEnabled$.next(set);
+    actions.applyVoiceState(voice(false), "host-join");
+    expect(set).not.toHaveBeenCalled();
+    expect(deafened$.value).toBe(false);
+  });
+
+  it("mutes as soon as the microphone can be controlled", () => {
+    const audio = {
+      enabled$: new BehaviorSubject(true),
+      setEnabled$: new BehaviorSubject<((enabled: boolean) => void) | null>(
+        null,
+      ),
+    };
+    const video = {
+      enabled$: new BehaviorSubject(false),
+      setEnabled$: new BehaviorSubject<((enabled: boolean) => void) | null>(
+        null,
+      ),
+    };
+    const actions = createCallActions({ audio, video, playSound: vi.fn() });
+    try {
+      actions.applyVoiceState(voice(true), "host-join");
+      expect(audio.enabled$.value).toBe(true);
+      audio.setEnabled$.next((value) => audio.enabled$.next(value));
+      expect(audio.enabled$.value).toBe(false);
+      // Only once: what the user does afterwards stands
+      audio.enabled$.next(true);
+      audio.setEnabled$.next((value) => audio.enabled$.next(value));
+      expect(audio.enabled$.value).toBe(true);
+    } finally {
+      actions.reset();
+    }
+  });
+
+  it("a later state from the host replaces one that was still waiting", () => {
+    const audio = {
+      enabled$: new BehaviorSubject(true),
+      setEnabled$: new BehaviorSubject<((enabled: boolean) => void) | null>(
+        null,
+      ),
+    };
+    const video = {
+      enabled$: new BehaviorSubject(false),
+      setEnabled$: new BehaviorSubject<((enabled: boolean) => void) | null>(
+        null,
+      ),
+    };
+    const actions = createCallActions({ audio, video, playSound: vi.fn() });
+    try {
+      actions.applyVoiceState(voice(true), "host-join");
+      actions.applyVoiceState(voice(false), "host");
+      audio.setEnabled$.next((value) => audio.enabled$.next(value));
+      expect(audio.enabled$.value).toBe(true);
+    } finally {
+      actions.reset();
+    }
+  });
+
+  it("leaves the cues to the host once the host keeps the state", () => {
+    const { actions, playSound } = start(true);
+    actions.applyVoiceState(voice(false), "host-join");
+    actions.perform("toggle-mute", "keyboard");
+    actions.perform("toggle-deafen", "keyboard");
+    actions.perform("toggle-deafen", "keyboard");
+    expect(playSound).not.toHaveBeenCalled();
+  });
+
+  it("ends a deafening when the microphone is turned on by other means", () => {
+    const { actions, audio } = start(true);
+    actions.perform("toggle-deafen", "keyboard");
+    expect(deafened$.value).toBe(true);
+    // The call's own microphone button
+    audio.setEnabled$.value?.(true);
+    expect(deafened$.value).toBe(false);
+    expect(actions.state()).toMatchObject({
+      audio_enabled: true,
+      deafened: false,
+    });
   });
 });

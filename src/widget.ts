@@ -52,6 +52,12 @@ export enum ElementWidgetActions {
   // own microphone, camera, deafening and screen share, and who of the
   // members is speaking, muted or sharing), sent when it changes
   CallState = "io.intercom.call_state",
+  // InterCom, both ways: the user's mute and deafen, which are the host's to
+  // keep (they hold without a call and over restarts).
+  // toWidget: `{ muted, deafened, muted_before_deafen }`, which the call
+  //   takes, silently; the reply is `{ audio_enabled, video_enabled, deafened }`
+  // fromWidget: `{}`, sent when the call is joined; the reply is the state
+  VoiceState = "io.intercom.voice_state",
 }
 
 export interface JoinCallData {
@@ -113,6 +119,7 @@ export const initializeWidget = (
         ElementWidgetActions.HangupCall,
         ElementWidgetActions.DeviceMute,
         ElementWidgetActions.CallAction,
+        ElementWidgetActions.VoiceState,
       ].forEach((action) => {
         api.on(`action:${action}`, (ev: CustomEvent<IWidgetApiRequest>) => {
           ev.preventDefault();

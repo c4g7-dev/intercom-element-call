@@ -31,6 +31,7 @@ import {
   createCallActions,
   deafened$,
   isCallAction,
+  parseHostVoiceState,
 } from "../state/callActions";
 import { hostCallState$ } from "../state/hostCallState";
 import { diag } from "../diagnostics/diag";
@@ -381,6 +382,34 @@ export const InCallView: FC<InCallViewProps> = ({
       },
     );
     return (): void => subscription.unsubscribe();
+  }, [hostBridgeForActions, callActions]);
+  // The user's mute and deafen are the host's where it keeps them (InterCom:
+  // they hold without a call and over restarts). The call takes them when it
+  // is joined, so that it is joined muted or deafened if that is how things
+  // stand, and whenever they change there.
+  useEffect(() => {
+    let over = false;
+    hostBridgeForActions
+      .requestVoiceState()
+      .then((voice) => {
+        if (!over && voice !== undefined)
+          callActions.applyVoiceState(voice, "host-join");
+      })
+      .catch(() => undefined);
+    const subscription = hostBridgeForActions.voiceState$.subscribe(
+      (request) => {
+        const voice = parseHostVoiceState(request.data);
+        request.reply(
+          voice === undefined
+            ? callActions.state()
+            : callActions.applyVoiceState(voice, "host"),
+        );
+      },
+    );
+    return (): void => {
+      over = true;
+      subscription.unsubscribe();
+    };
   }, [hostBridgeForActions, callActions]);
   // The host shows the call next to its own controls: who is in it, who is
   // talking, and how the user's microphone, camera and share stand

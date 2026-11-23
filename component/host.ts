@@ -162,6 +162,9 @@ export function useComponentHostBridge(
     // A host of the component has the call in its own page: its shortcuts
     // reach the call by themselves
     callAction$: NEVER,
+    // A host of the component keeps no mute and deafen of its own for the call
+    requestVoiceState: async () => await Promise.resolve(undefined),
+    voiceState$: NEVER,
     // Whether these exist is itself information, so they are read through
     // rather than wrapped unconditionally
     get close() {

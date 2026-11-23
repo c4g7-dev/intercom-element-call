@@ -36,6 +36,30 @@ export function isCallAction(value: unknown): value is CallAction {
   return typeof value === "string" && callActions.has(value);
 }
 
+/**
+ * The user's mute and deafen as the host keeps them: they hold without a
+ * call and over restarts, and a call is joined with them.
+ */
+export type HostVoiceState = {
+  muted: boolean;
+  deafened: boolean;
+  /** While deafened: whether the microphone stays off afterwards */
+  muted_before_deafen: boolean;
+};
+
+/** Reads what the host sent; anything that is not a voice state is none. */
+export function parseHostVoiceState(data: unknown): HostVoiceState | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const raw = data as Record<string, unknown>;
+  if (typeof raw.muted !== "boolean" || typeof raw.deafened !== "boolean")
+    return undefined;
+  return {
+    muted: raw.muted || raw.deafened,
+    deafened: raw.deafened,
+    muted_before_deafen: raw.deafened && raw.muted_before_deafen === true,
+  };
+}
+
 /** The state the host is told after an action. */
 export type CallActionState = {
   audio_enabled: boolean;
@@ -132,23 +156,71 @@ export function createCallActions({
   toggleScreenShare,
 }: CallActionInputs): {
   perform: (action: CallAction, source: string) => CallActionState;
+  /**
+   * Takes the mute and deafen the host keeps: when the call is joined, and
+   * whenever they change there. Nothing is played for it, here or for any
+   * change after it: a host that keeps the state plays the cue itself, once,
+   * wherever the change came from.
+   */
+  applyVoiceState: (voice: HostVoiceState, source: string) => CallActionState;
   /** How things are, with nothing done. */
   state: () => CallActionState;
   /** Ends a deafening with the call it was for. */
   reset: () => void;
 } {
   let micBeforeDeafen = false;
+  // Whether the host plays the cues, which it does once it has given a state
+  let hostPlaysCues = false;
+  const cue = (on: boolean): void => {
+    if (!hostPlaysCues) playSound(on);
+  };
+  // A microphone state that waits for the microphone to be controllable
+  let pendingMic: { unsubscribe: () => void } | undefined;
+  const cancelPendingMic = (): void => {
+    pendingMic?.unsubscribe();
+    pendingMic = undefined;
+  };
   const state = (): CallActionState => ({
     audio_enabled: audio.enabled$.value,
     video_enabled: video.enabled$.value,
     deafened: deafenedSubject$.value,
   });
   const setMic = (enabled: boolean): boolean => {
+    cancelPendingMic();
     const set = audio.setEnabled$.value;
     if (set === null || audio.enabled$.value === enabled) return false;
     set(enabled);
     return true;
   };
+  /** Like setMic, but done as soon as the microphone can be controlled. */
+  const setMicWhenPossible = (enabled: boolean): void => {
+    cancelPendingMic();
+    if (audio.setEnabled$.value !== null) {
+      setMic(enabled);
+      return;
+    }
+    // The first value is the null that was just looked at; the one that
+    // counts comes later, when the devices are there
+    const subscription = audio.setEnabled$.subscribe((set) => {
+      if (set === null || pendingMic !== subscription) return;
+      cancelPendingMic();
+      if (audio.enabled$.value !== enabled) set(enabled);
+    });
+    pendingMic = subscription;
+  };
+  // A microphone that goes on while deafened, by whatever means (the call's
+  // own button, the host's device mute), ends the deafening: nobody is to be
+  // heard by people they cannot hear, and the host is told a state that is
+  // one it knows.
+  let micWasOn = audio.enabled$.value;
+  const micSubscription = audio.enabled$.subscribe((on) => {
+    const turnedOn = on && !micWasOn;
+    micWasOn = on;
+    if (turnedOn && deafenedSubject$.value) {
+      micBeforeDeafen = false;
+      deafenedSubject$.next(false);
+    }
+  });
 
   const perform = (action: CallAction, source: string): CallActionState => {
     const before = state();
@@ -163,12 +235,12 @@ export function createCallActions({
         if (deafenedSubject$.value) {
           deafenedSubject$.next(false);
           if (micBeforeDeafen) setMic(true);
-          playSound(true);
+          cue(true);
         } else {
           micBeforeDeafen = audio.enabled$.value;
           deafenedSubject$.next(true);
           setMic(false);
-          playSound(false);
+          cue(false);
         }
         break;
       case "mute":
@@ -182,7 +254,7 @@ export function createCallActions({
         if (enable && wasDeafened) deafenedSubject$.next(false);
         // Muted by hand while deafened: stay muted when the deafening ends
         if (!enable && wasDeafened) micBeforeDeafen = false;
-        if (setMic(enable) || (enable && wasDeafened)) playSound(enable);
+        if (setMic(enable) || (enable && wasDeafened)) cue(enable);
         break;
       }
     }
@@ -198,10 +270,31 @@ export function createCallActions({
     return after;
   };
 
+  const applyVoiceState = (
+    voice: HostVoiceState,
+    source: string,
+  ): CallActionState => {
+    hostPlaysCues = true;
+    micBeforeDeafen = voice.deafened && !voice.muted_before_deafen;
+    // The microphone first: one that is on must not meet a deafening
+    setMicWhenPossible(!voice.muted);
+    if (deafenedSubject$.value !== voice.deafened)
+      deafenedSubject$.next(voice.deafened);
+    diag("voice_state", {
+      source,
+      muted: voice.muted,
+      deafened: voice.deafened,
+    });
+    return state();
+  };
+
   return {
     perform,
+    applyVoiceState,
     state,
     reset: (): void => {
+      cancelPendingMic();
+      micSubscription.unsubscribe();
       if (deafenedSubject$.value) deafenedSubject$.next(false);
       micBeforeDeafen = false;
     },
