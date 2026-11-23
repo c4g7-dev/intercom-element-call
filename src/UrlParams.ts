@@ -381,6 +381,12 @@ export const computeUrlParams = (search = "", hash = ""): UrlParams => {
     ...properties,
     ...intentPreset,
     ...pickBy(configuration, (v?: unknown) => v !== undefined),
+    // InterCom: "none" takes the notification of the intent's preset away. A
+    // host asks for it where joining is dropping in, not calling somebody: a
+    // voice channel.
+    ...(parser.getParam("sendNotificationType") === "none"
+      ? { sendNotificationType: undefined }
+      : {}),
   };
 };
 

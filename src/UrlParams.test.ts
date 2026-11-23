@@ -310,6 +310,17 @@ describe("UrlParams", () => {
       });
     });
 
+    it("sends no notification when the host asks for none", () => {
+      const params = computeUrlParams(
+        "?intent=join_existing&widgetId=1234&parentUrl=parent.org&sendNotificationType=none",
+      );
+      expect(params).toMatchObject({
+        ...joinExistingCallDefaults("desktop"),
+        sendNotificationType: undefined,
+      });
+      expect(params.sendNotificationType).toBeUndefined();
+    });
+
     it("accepts join_existing", () => {
       expect(
         computeUrlParams(
