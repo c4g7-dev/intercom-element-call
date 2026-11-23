@@ -164,6 +164,8 @@ export function useComponentHostBridge(
     callAction$: NEVER,
     // A host of the component keeps no mute and deafen of its own for the call
     requestVoiceState: async () => await Promise.resolve(undefined),
+    // nor sounds of its own for it
+    requestSounds: async () => await Promise.resolve(undefined),
     voiceState$: NEVER,
     // Whether these exist is itself information, so they are read through
     // rather than wrapped unconditionally

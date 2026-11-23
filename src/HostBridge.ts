@@ -24,6 +24,7 @@ import {
   parseHostVoiceState,
 } from "./state/callActions";
 import { type HostCallState } from "./state/hostCallState";
+import { type HostSounds, parseHostSounds } from "./state/callEventSounds";
 
 // Note: these are type aliases rather than interfaces so that they satisfy the
 // widget API's index-signature payload types.
@@ -93,6 +94,13 @@ export interface HostBridge {
    * Resolves to undefined where there is no such host.
    */
   requestVoiceState(): Promise<HostVoiceState | undefined>;
+  /**
+   * Asks the host about the call's sounds: whether it plays the user's own
+   * join and leave sounds itself, and for sound files of the user's to play
+   * instead of the built-in ones (InterCom). Resolves to undefined where
+   * there is no such host.
+   */
+  requestSounds(): Promise<HostSounds | undefined>;
   /**
    * Asks the host to close Element Call, and stops communicating with it. No
    * further calls should be made on this bridge afterwards.
@@ -268,6 +276,7 @@ export const nullHostBridge: HostBridge = {
   notifyDeviceMute: async () => {},
   notifyCallState: async () => {},
   requestVoiceState: async () => await Promise.resolve(undefined),
+  requestSounds: async () => await Promise.resolve(undefined),
   themeChange$: NEVER,
   join$: NEVER,
   hangUp$: NEVER,
@@ -326,6 +335,16 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
       try {
         return parseHostVoiceState(
           await widget.api.transport.send(ElementWidgetActions.VoiceState, {}),
+        );
+      } catch {
+        // A host that is not InterCom does not know the message
+        return undefined;
+      }
+    },
+    requestSounds: async () => {
+      try {
+        return parseHostSounds(
+          await widget.api.transport.send(ElementWidgetActions.Sounds, {}),
         );
       } catch {
         // A host that is not InterCom does not know the message

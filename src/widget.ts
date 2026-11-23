@@ -58,6 +58,11 @@ export enum ElementWidgetActions {
   //   takes, silently; the reply is `{ audio_enabled, video_enabled, deafened }`
   // fromWidget: `{}`, sent when the call is joined; the reply is the state
   VoiceState = "io.intercom.voice_state",
+  // InterCom, fromWidget: `{}`, asked once when the call is joined. The reply
+  // is `{ host_cues, sounds: { join?: { data }, leave?: { data } } }`: whether
+  // the host plays the user's own join and leave sounds, and the user's own
+  // sound files (base64) to play instead of the built-in ones
+  Sounds = "io.intercom.sounds",
 }
 
 export interface JoinCallData {

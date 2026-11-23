@@ -214,3 +214,40 @@ test("should not play a sound when a hand raise is retracted", () => {
   });
   expect(playSound).toHaveBeenCalledExactlyOnceWith("raiseHand");
 });
+
+test("InterCom: plays one join sound when several people join at once", () => {
+  vitest.useFakeTimers();
+  try {
+    const carol = mockRtcMembership("@carol:example.org", "CCCC");
+    const { vm, rtcMemberships$ } = getBasicCallViewModelEnvironment([
+      local,
+      alice,
+      bob,
+      mockMatrixRoomMember(carol),
+    ]);
+    render(<CallEventAudioRenderer vm={vm} />);
+
+    act(() => {
+      rtcMemberships$.next([localRtcMember, aliceRtcMember]);
+    });
+    // Past the view model's own throttle, inside InterCom's window
+    act(() => {
+      vitest.advanceTimersByTime(700);
+      rtcMemberships$.next([localRtcMember, aliceRtcMember, bobRtcMember]);
+    });
+    expect(playSound).toHaveBeenCalledTimes(1);
+    act(() => {
+      vitest.advanceTimersByTime(1600);
+      rtcMemberships$.next([
+        localRtcMember,
+        aliceRtcMember,
+        bobRtcMember,
+        carol,
+      ]);
+    });
+    expect(playSound).toHaveBeenCalledTimes(2);
+    expect(playSound).toHaveBeenLastCalledWith("join");
+  } finally {
+    vitest.useRealTimers();
+  }
+});

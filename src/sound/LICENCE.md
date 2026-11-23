@@ -25,3 +25,11 @@ The following sound effects have been originally created by Element.
 - `reactions/rock`
 - `reactions/wave`
 - `reactions/baduntss`
+
+### InterCom
+
+The following sound effects are InterCom's own. They are not recordings: `scripts/intercom-sounds.py`
+works them out from sine waves, and they are covered by the licence of this repository.
+
+- `intercom_join`
+- `intercom_leave`
