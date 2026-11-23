@@ -32,6 +32,7 @@ import {
   deafened$,
   isCallAction,
 } from "../state/callActions";
+import { hostCallState$ } from "../state/hostCallState";
 import { diag } from "../diagnostics/diag";
 import { VolumeOffSolidIcon } from "@vector-im/compound-design-tokens/assets/web/icons";
 import { useHostBridge } from "../HostBridge.ts";
@@ -357,8 +358,12 @@ export const InCallView: FC<InCallViewProps> = ({
   // shortcuts also work while its window does not have the focus)
   const callActions = useMemo(
     () =>
-      createCallActions({ audio: muteStates.audio, video: muteStates.video }),
-    [muteStates],
+      createCallActions({
+        audio: muteStates.audio,
+        video: muteStates.video,
+        toggleScreenShare: () => vm.toggleScreenSharing,
+      }),
+    [muteStates, vm],
   );
   useEffect(() => callActions.reset, [callActions]);
   const hostBridgeForActions = useHostBridge();
@@ -377,6 +382,23 @@ export const InCallView: FC<InCallViewProps> = ({
     );
     return (): void => subscription.unsubscribe();
   }, [hostBridgeForActions, callActions]);
+  // The host shows the call next to its own controls: who is in it, who is
+  // talking, and how the user's microphone, camera and share stand
+  useEffect(() => {
+    const subscription = hostCallState$({
+      audioEnabled$: muteStates.audio.enabled$,
+      videoEnabled$: muteStates.video.enabled$,
+      deafened$,
+      sharingScreen$: vm.sharingScreen$,
+      reconnecting$: vm.reconnecting$,
+      participants$: vm.hostParticipants$,
+    }).subscribe((state) => {
+      hostBridgeForActions.notifyCallState(state).catch(() => {
+        // A host that is not InterCom does not know the message
+      });
+    });
+    return (): void => subscription.unsubscribe();
+  }, [hostBridgeForActions, muteStates, vm]);
   const performCallAction = useCallback(
     (action: CallAction) => void callActions.perform(action, "keyboard"),
     [callActions],

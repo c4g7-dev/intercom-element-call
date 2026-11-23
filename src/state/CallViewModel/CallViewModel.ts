@@ -90,6 +90,10 @@ import {
   screenShareLimitsForBudget,
   screenShareRequest,
 } from "../screenShareOptions";
+import {
+  type HostParticipantState,
+  hostParticipants$,
+} from "../hostCallState";
 import { shareAudioMix, shareAudioMode } from "../shareAudioSink";
 import { createShareAudioMix, mixSourceKinds } from "../shareAudioMixer";
 import { type MuteStates } from "../MuteStates";
@@ -413,6 +417,11 @@ export interface CallViewModel {
   /** Our own camera track, while one is published. */
   camera$: Behavior<LocalVideoMediaTrack | undefined>;
   remoteMembers$: Behavior<RemoteRTCMember[]>;
+  /**
+   * InterCom: the members of the call as the host lists them: one entry per
+   * user, with whether they speak, are muted or share a screen.
+   */
+  hostParticipants$: Observable<HostParticipantState[]>;
   /** The transports the client holds a connection to, for the developer panel. */
   connectedTransports$: Behavior<TransportMetadata[]>;
   /** List of participants raising their hand */
@@ -1817,6 +1826,7 @@ export function createCallViewModel$(
     keyRotationSuppressed$: keyRotationSuppressed$,
     localMember$: rtcParticipation.localMember$,
     remoteMembers$: rtcParticipation.remoteMembers$,
+    hostParticipants$: hostParticipants$(userMedia$),
     connectedTransports$: rtcParticipation.connectedTransports$,
     handsRaised$: handsRaised$,
     reactions$: reactions$,

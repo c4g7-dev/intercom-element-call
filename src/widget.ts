@@ -48,6 +48,10 @@ export enum ElementWidgetActions {
   // window) asks for `{ action }`, one of the call actions; the reply is
   // `{ audio_enabled, video_enabled, deafened }`
   CallAction = "io.intercom.call_action",
+  // InterCom, fromWidget: the state of the call while the user is in it (their
+  // own microphone, camera, deafening and screen share, and who of the
+  // members is speaking, muted or sharing), sent when it changes
+  CallState = "io.intercom.call_state",
 }
 
 export interface JoinCallData {

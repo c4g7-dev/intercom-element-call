@@ -20,7 +20,8 @@ export type CallAction =
   | "mute"
   | "unmute"
   | "toggle-camera"
-  | "toggle-deafen";
+  | "toggle-deafen"
+  | "toggle-screenshare";
 
 const callActions = new Set<string>([
   "toggle-mute",
@@ -28,6 +29,7 @@ const callActions = new Set<string>([
   "unmute",
   "toggle-camera",
   "toggle-deafen",
+  "toggle-screenshare",
 ]);
 
 export function isCallAction(value: unknown): value is CallAction {
@@ -76,6 +78,11 @@ interface CallActionInputs {
   video: Device;
   /** Plays the sound of the microphone or the hearing going on or off. */
   playSound?: (on: boolean) => void;
+  /**
+   * Starts or stops the user's screen share. Looked up when asked for, as
+   * it is only there once the call is.
+   */
+  toggleScreenShare?: () => (() => void) | null | undefined;
 }
 
 let toneContext: AudioContext | undefined;
@@ -122,6 +129,7 @@ export function createCallActions({
   audio,
   video,
   playSound = playToggleSound,
+  toggleScreenShare,
 }: CallActionInputs): {
   perform: (action: CallAction, source: string) => CallActionState;
   /** How things are, with nothing done. */
@@ -147,6 +155,9 @@ export function createCallActions({
     switch (action) {
       case "toggle-camera":
         video.setEnabled$.value?.(!video.enabled$.value);
+        break;
+      case "toggle-screenshare":
+        toggleScreenShare?.()?.();
         break;
       case "toggle-deafen":
         if (deafenedSubject$.value) {

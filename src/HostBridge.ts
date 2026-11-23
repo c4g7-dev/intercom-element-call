@@ -19,6 +19,7 @@ import {
   type WidgetHelpers,
 } from "./widget";
 import { type CallActionState } from "./state/callActions";
+import { type HostCallState } from "./state/hostCallState";
 
 // Note: these are type aliases rather than interfaces so that they satisfy the
 // widget API's index-signature payload types.
@@ -76,6 +77,12 @@ export interface HostBridge {
   notifyHungUp(): Promise<void>;
   /** Tells the host the user's current audio and video mute state. */
   notifyDeviceMute(state: DeviceMuteState): Promise<void>;
+  /**
+   * Tells the host how the call stands: the user's own controls and who of
+   * the members is speaking, muted or sharing. A host that does not know the
+   * message rejects it, which is nothing to act on.
+   */
+  notifyCallState(state: HostCallState): Promise<void>;
   /**
    * Asks the host to close Element Call, and stops communicating with it. No
    * further calls should be made on this bridge afterwards.
@@ -244,6 +251,7 @@ export const nullHostBridge: HostBridge = {
   notifyJoined: async () => {},
   notifyHungUp: async () => {},
   notifyDeviceMute: async () => {},
+  notifyCallState: async () => {},
   themeChange$: NEVER,
   join$: NEVER,
   hangUp$: NEVER,
@@ -295,6 +303,8 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
     notifyHungUp: async () => send(ElementWidgetActions.HangupCall),
     notifyDeviceMute: async (state) =>
       send(ElementWidgetActions.DeviceMute, state),
+    notifyCallState: async (state) =>
+      send(ElementWidgetActions.CallState, state),
     close: async () => {
       try {
         await send(ElementWidgetActions.Close);

@@ -157,6 +157,8 @@ export function useComponentHostBridge(
     notifyDeviceMute: async (state) => {
       await latest.current.notifyDeviceMute?.(state);
     },
+    // A host of the component reads the call's state from the component itself
+    notifyCallState: async () => {},
     // A host of the component has the call in its own page: its shortcuts
     // reach the call by themselves
     callAction$: NEVER,
