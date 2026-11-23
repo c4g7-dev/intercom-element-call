@@ -53,11 +53,11 @@ rather than blue-tinted */
   --cpd-color-gray-1200: #c3c3cb;
   --cpd-color-gray-1300: #dcdce1;
   --cpd-color-gray-1400: #f0f0f3;
-  --cpd-color-bg-canvas-default: #0d0d0f;
+  --cpd-color-bg-canvas-default: #0a0a0c;
   --cpd-color-bg-subtle-secondary: #17171a;
   --cpd-color-bg-subtle-primary: #1f1f24;
   --video-tile-background: #1a1a1e;
-  --stopgap-background-85: rgba(13, 13, 15, 0.9);
+  --stopgap-background-85: rgba(10, 10, 12, 0.9);
 }
 
 /* No decorative page gradient */
