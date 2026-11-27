@@ -150,6 +150,15 @@ export function computeLayoutMedia({
       focusedMedia,
       ...screenShares.filter((m) => m !== focusedMedia),
     ];
+    // The expand button of the spotlight works on what was clicked as well:
+    // the strip goes and the user's own camera is a PiP (unless it is the
+    // focused media itself)
+    if (windowMode === "normal" && spotlightExpanded)
+      return spotlightExpandedLayoutMedia(
+        false,
+        focusedSpotlight,
+        pip === focusedMedia ? undefined : pip,
+      );
     return windowMode === "narrow"
       ? spotlightPortraitLayoutMedia(focusedSpotlight, grid)
       : spotlightLandscapeLayoutMedia(

@@ -339,6 +339,42 @@ describe("computeLayoutMedia with a focused tile", () => {
     ).toBe("pip");
   });
 
+  it("expands the focused media when the spotlight's expand button is on", () => {
+    expect(
+      computeLayoutMedia({
+        ...base,
+        spotlightExpanded: true,
+        focused: "user:ben",
+      }),
+    ).toEqual({
+      type: "spotlight-expanded",
+      edgeToEdge: false,
+      spotlight: [ben],
+      pip: me,
+    });
+    // Our own camera is not shown twice
+    expect(
+      computeLayoutMedia({
+        ...base,
+        spotlightExpanded: true,
+        focused: "user:me",
+      }),
+    ).toMatchObject({
+      type: "spotlight-expanded",
+      spotlight: [me],
+      pip: undefined,
+    });
+    // A narrow window has no expand button: the portrait spotlight stays
+    expect(
+      computeLayoutMedia({
+        ...base,
+        windowMode: "narrow",
+        spotlightExpanded: true,
+        focused: "user:ben",
+      }).type,
+    ).toBe("spotlight-portrait");
+  });
+
   it("falls back to the chosen layout when the focused media is gone", () => {
     expect(computeLayoutMedia({ ...base, focused: "user:gone" }).type).toBe(
       "grid",
