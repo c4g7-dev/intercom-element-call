@@ -65,7 +65,7 @@ const shareAudio: ShareAudioHost = {
         {
           name: "alsa_output.usb-headset",
           description: "USB Headset Analog Stereo",
-          apps: ["InterCom", "Firefox"],
+          apps: ["Lattice", "Firefox"],
           ownPlayback: true,
         },
       ],

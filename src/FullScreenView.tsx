@@ -17,6 +17,7 @@ import styles from "./FullScreenView.module.css";
 import { useUrlParams } from "./UrlParams";
 import { RichError } from "./RichError";
 import { ErrorView } from "./ErrorView";
+import { LatticeConnecting } from "./LatticeConnecting";
 
 interface FullScreenViewProps {
   className?: string;
@@ -81,6 +82,7 @@ export const LoadingPage: FC = () => {
 
   return (
     <FullScreenView>
+      <LatticeConnecting />
       <h1>{t("common.loading")}</h1>
     </FullScreenView>
   );

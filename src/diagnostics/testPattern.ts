@@ -72,7 +72,7 @@ export function openTestPattern(): boolean {
   const doc = win.document;
   doc.head.replaceChildren();
   doc.body.replaceChildren();
-  doc.title = "InterCom sharpness test pattern";
+  doc.title = "Lattice sharpness test pattern";
   const style = doc.createElement("style");
   style.textContent = STYLE;
   doc.head.append(style);
@@ -103,7 +103,7 @@ export function buildTestPattern(doc: Document, win: Window): void {
     return node;
   };
 
-  doc.body.append(el("h1", "InterCom sharpness test pattern"));
+  doc.body.append(el("h1", "Lattice sharpness test pattern"));
   const label = el("div", "", "label");
   label.id = "resolution";
   const describeSize = (): void => {

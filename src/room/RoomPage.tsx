@@ -14,6 +14,7 @@ import { UnknownSolidIcon } from "@vector-im/compound-design-tokens/assets/web/i
 
 import { useClientLegacy } from "../ClientContext";
 import { ErrorPage, FullScreenView, LoadingPage } from "../FullScreenView";
+import { LatticeConnecting } from "../LatticeConnecting";
 import { RoomAuthView } from "./RoomAuthView";
 import { CallView } from "./CallView";
 import { useRoomIdentifier, useUrlParams } from "../UrlParams";
@@ -135,6 +136,7 @@ export const RoomPage: FC = (): ReactNode => {
       case "loading":
         return (
           <FullScreenView>
+            <LatticeConnecting />
             <h1>{t("common.loading")}</h1>
           </FullScreenView>
         );

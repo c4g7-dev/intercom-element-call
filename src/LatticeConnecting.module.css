@@ -1,0 +1,52 @@
+/*
+Copyright 2026 The InterCom contributors
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+/* Lattice's mark while a call is being joined: a light goes round a ring of
+dots. The colours are the icon's own, the same in every theme. */
+.mark {
+  display: block;
+  margin: 0 auto var(--cpd-space-4x);
+}
+
+.tile {
+  fill: #101013;
+  stroke: #26262d;
+  stroke-width: 3px;
+}
+
+.ring {
+  fill: #6875f5;
+  opacity: 0.15;
+  animation: lattice-ring 2.4s linear infinite;
+}
+
+.centre {
+  fill: #eef0ff;
+  opacity: 0.9;
+}
+
+@keyframes lattice-ring {
+  0% {
+    opacity: 0.15;
+  }
+
+  8% {
+    opacity: 1;
+  }
+
+  30%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    animation: none;
+    opacity: 0.5;
+  }
+}
