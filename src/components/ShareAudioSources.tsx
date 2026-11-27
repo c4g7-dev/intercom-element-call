@@ -5,9 +5,10 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type FC, type ReactNode, useEffect, useId, useState } from "react";
+import { type FC, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  SearchIcon,
   VolumeOffSolidIcon,
   VolumeOnSolidIcon,
 } from "@vector-im/compound-design-tokens/assets/web/icons";
@@ -28,12 +29,23 @@ import {
   shareAudioMode,
   type ShareAudioMode,
   sinkChoice,
-  sinkLabel,
   sinkOfChoice,
 } from "../state/shareAudioSink";
 import { shareAudioMixStatus$ } from "../state/shareAudioMixer";
 import { diag } from "../diagnostics/diag";
 import { type DeviceLabel } from "../state/MediaDevices";
+import {
+  type NamedDevice,
+  searchShareSources,
+  selectAllShareSources,
+  selectNoShareSources,
+  shareAudioModes,
+  type ShareSourceGroupId,
+  shareSourceCounts,
+  shareSourceGroups,
+  toggleShareSource,
+} from "../state/shareDialogModel";
+import { sharePlatform } from "../state/quickShare";
 import styles from "./ShareAudioSources.module.css";
 
 interface Props {
@@ -47,45 +59,13 @@ interface Props {
 
 const noDevices = constant(new Map<string, DeviceLabel>());
 
-interface Row {
-  id: string;
-  label: string;
-  note?: string;
-}
-
 /**
- * Where a screen share's sound comes from: nowhere, the screen picker, or a
- * mix of any number of sources, each with a gain and a mute of its own. The
- * sources are the outputs the host can make a capture device of (with what
- * is playing into each), the inputs set up to carry an output's sound, and
- * the other audio inputs. Every choice is kept for the next share, and
- * applies at once to the share that is on.
+ * The outputs the host can make a share's audio of, with what is playing
+ * into each: asked again every few seconds, as that changes. Null where the
+ * host has none to offer.
  */
-export const ShareAudioSources: FC<Props> = ({ live }) => {
-  const { t } = useTranslation();
-  const id = useId();
-  const [choice, setChoice] = useSetting(screenShareAudioSource);
-  const [storedMix, setStoredMix] = useSetting(screenShareAudioMix);
-  const devices = useMediaDevices();
-  const audioInputs = useBehavior(devices.audioInput.available$);
-  const shareInputs = useBehavior(devices.shareAudioSources$ ?? noDevices);
-  const status = useBehavior(shareAudioMixStatus$);
+export function useShareSinks(): ShareSink[] | null {
   const shareAudio = useHostBridge().shareAudio;
-
-  const mode = shareAudioMode(choice);
-  // What an older version stored as the one device is a mix of one. The mix
-  // is kept while the mode is another, to come back to
-  const legacy = mode === "mix" && choice !== "mix";
-  const mix = legacy ? shareAudioMix(choice, []) : sanitizeMix(storedMix);
-  useEffect(() => {
-    if (shareAudioMode(choice) === "mix" && choice !== "mix") {
-      setStoredMix(shareAudioMix(choice, []));
-      setChoice("mix");
-    }
-  }, [choice, setChoice, setStoredMix]);
-
-  // The outputs the host can make a share's audio of, with what is playing
-  // into each: asked again every few seconds, as that changes
   const [sinks, setSinks] = useState<ShareSink[] | null>(null);
   useEffect(() => {
     if (shareAudio === undefined) return;
@@ -108,6 +88,61 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
       clearInterval(timer);
     };
   }, [shareAudio]);
+  return sinks;
+}
+
+/** The capture devices a share's audio can come from, under their names. */
+export function useShareDevices(): {
+  shareInputs: NamedDevice[];
+  audioInputs: NamedDevice[];
+} {
+  const { t } = useTranslation();
+  const devices = useMediaDevices();
+  const audioInputs = useBehavior(devices.audioInput.available$);
+  const shareInputs = useBehavior(devices.shareAudioSources$ ?? noDevices);
+  return useMemo(() => {
+    const named = (list: Map<string, DeviceLabel>): NamedDevice[] =>
+      [...list].map(([id, label], i) => ({
+        id,
+        label:
+          label.type === "name"
+            ? label.name
+            : t("settings.devices.microphone_numbered", { n: i + 1 }),
+      }));
+    return { shareInputs: named(shareInputs), audioInputs: named(audioInputs) };
+  }, [audioInputs, shareInputs, t]);
+}
+
+/**
+ * Where a screen share's sound comes from: nowhere, the screen picker, or a
+ * mix of any number of sources, each with a gain and a mute of its own. The
+ * sources are listed in groups: the outputs the host can make a capture
+ * device of (with what is playing into each), the inputs set up to carry an
+ * output's sound, and the other audio inputs. Every choice is kept for the
+ * next share, and applies at once to the share that is on. The list does
+ * not scroll by itself: whatever holds it does.
+ */
+export const ShareAudioSources: FC<Props> = ({ live }) => {
+  const { t } = useTranslation();
+  const searchId = useId();
+  const [choice, setChoice] = useSetting(screenShareAudioSource);
+  const [storedMix, setStoredMix] = useSetting(screenShareAudioMix);
+  const status = useBehavior(shareAudioMixStatus$);
+  const sinks = useShareSinks();
+  const { shareInputs, audioInputs } = useShareDevices();
+  const [query, setQuery] = useState("");
+
+  const mode = shareAudioMode(choice);
+  // What an older version stored as the one device is a mix of one. The mix
+  // is kept while the mode is another, to come back to
+  const legacy = mode === "mix" && choice !== "mix";
+  const mix = legacy ? shareAudioMix(choice, []) : sanitizeMix(storedMix);
+  useEffect(() => {
+    if (shareAudioMode(choice) === "mix" && choice !== "mix") {
+      setStoredMix(shareAudioMix(choice, []));
+      setChoice("mix");
+    }
+  }, [choice, setChoice, setStoredMix]);
 
   const setMode = (value: ShareAudioMode): void => {
     diag("share_audio_choice", { mode: value, live });
@@ -126,11 +161,7 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
       selected: on,
       live,
     });
-    setMix(
-      on
-        ? [...mix, { id: sourceId, gain: 1, muted: false }]
-        : mix.filter((s) => s.id !== sourceId),
-    );
+    setMix(toggleShareSource(mix, sourceId, on));
   };
   const update = (
     sourceId: string,
@@ -138,45 +169,15 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
   ): void =>
     setMix(mix.map((s) => (s.id === sourceId ? { ...s, ...change } : s)));
 
-  const deviceName = (label: DeviceLabel, n: number): string =>
-    label.type === "name"
-      ? label.name
-      : t("settings.devices.microphone_numbered", { n });
-
-  const sinkRows: Row[] = (sinks ?? []).map((sink) => ({
-    id: sinkChoice(sink.name),
-    label: sinkLabel(sink),
-    note: sink.ownPlayback
-      ? t("screen_share_options.audio_sink_own")
-      : undefined,
-  }));
-  // An input that carries the sound of a listed output is that output
-  const sinkSources = new Set((sinks ?? []).map((sink) => sink.source));
-  const shareRows: Row[] = [...shareInputs]
-    .filter(
-      ([, label]) => !(label.type === "name" && sinkSources.has(label.name)),
-    )
-    .map(([deviceId, label], i) => ({
-      id: deviceId,
-      label: deviceName(label, i + 1),
-    }));
-  const inputRows: Row[] = [...audioInputs]
-    // The default device is one of the others under another name
-    .filter(([deviceId]) => deviceId !== "" && deviceId !== "default")
-    .map(([deviceId, label], i) => ({
-      id: deviceId,
-      label: deviceName(label, i + 1),
-    }));
-  const known = new Set(
-    [...sinkRows, ...shareRows, ...inputRows].map((row) => row.id),
-  );
-  // What was picked and is not there now stays listed, so it can be dropped
-  const goneRows: Row[] = mix
-    .filter((s) => !known.has(s.id))
-    .map((s) => ({
-      id: s.id,
-      label: sinkOfChoice(s.id) ?? t("screen_share_options.audio_unavailable"),
-    }));
+  const groups = shareSourceGroups({
+    sinks,
+    shareInputs,
+    audioInputs,
+    mix,
+    unavailableLabel: t("screen_share_options.audio_unavailable"),
+  });
+  const shown = searchShareSources(groups, query);
+  const counts = shareSourceCounts(groups);
 
   const echo =
     mode === "mix" &&
@@ -193,87 +194,49 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
         ? live
           ? t("screen_share_options.audio_system_live_hint")
           : t("screen_share_options.audio_system_hint")
-        : t("screen_share_options.audio_mix_hint");
+        : mode === "mix"
+          ? t("screen_share_options.audio_mix_hint")
+          : t("screen_share_options.audio_none_hint");
 
-  const group = (label: string, rows: Row[], testId?: string): ReactNode =>
-    rows.length > 0 && (
-      <fieldset className={styles.group} data-testid={testId}>
-        <legend>{label}</legend>
-        {rows.map((row) => {
-          const source = mix.find((s) => s.id === row.id);
-          const percent = Math.round((source?.gain ?? 1) * 100);
-          const Icon = source?.muted ? VolumeOffSolidIcon : VolumeOnSolidIcon;
-          return (
-            <div
-              key={row.id}
-              className={styles.source}
-              data-status={live && source ? status[row.id] : undefined}
-            >
-              <label className={styles.name}>
-                <input
-                  type="checkbox"
-                  checked={source !== undefined}
-                  onChange={(e) => toggle(row.id, e.target.checked)}
-                />
-                <span>
-                  {row.label}
-                  {row.note && ` (${row.note})`}
-                </span>
-              </label>
-              {source && (
-                <div className={styles.gain}>
-                  <button
-                    type="button"
-                    aria-label={t("screen_share_options.audio_source_mute", {
-                      source: row.label,
-                    })}
-                    aria-pressed={source.muted}
-                    onClick={() => update(row.id, { muted: !source.muted })}
-                  >
-                    <Icon aria-hidden width={20} height={20} />
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={200}
-                    step={1}
-                    value={percent}
-                    aria-label={t("screen_share_options.audio_source_gain", {
-                      source: row.label,
-                    })}
-                    onChange={(e) =>
-                      update(row.id, { gain: Number(e.target.value) / 100 })
-                    }
-                  />
-                  <span className={styles.percent}>{percent}%</span>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </fieldset>
-    );
+  const modeLabels: Record<ShareAudioMode, string> = {
+    none: t("screen_share_options.audio_none"),
+    system: t("screen_share_options.audio_system"),
+    mix: t("screen_share_options.audio_mix"),
+  };
+  const groupLabels: Record<ShareSourceGroupId, string> = {
+    outputs: t("screen_share_options.audio_sinks"),
+    "share-inputs": t("screen_share_options.audio_share_sources"),
+    inputs: t("screen_share_options.audio_inputs"),
+    gone: t("screen_share_options.audio_gone"),
+  };
+  // The picker's audio belongs to the capture: it cannot be added to or
+  // taken from a share that is on
+  const modeDisabled = (value: ShareAudioMode): boolean =>
+    live && (mode === "system" ? value !== "system" : value === "system");
 
   return (
     <div className={styles.shareAudio} data-testid="screenshare_audio">
-      <label htmlFor={id} className={styles.label}>
-        {t("screen_share_options.audio")}
-      </label>
-      <select
-        id={id}
-        value={mode}
-        // The picker's audio belongs to the capture: it cannot be added to
-        // or taken from a share that is on
-        disabled={live && mode === "system"}
-        onChange={(e) => setMode(e.target.value as ShareAudioMode)}
+      <div
+        role="radiogroup"
+        aria-label={t("screen_share_options.audio")}
+        className={styles.modes}
         data-testid="screenshare_audio_source"
+        data-value={mode}
       >
-        <option value="none">{t("screen_share_options.audio_none")}</option>
-        <option value="system" disabled={live && mode !== "system"}>
-          {t("screen_share_options.audio_system")}
-        </option>
-        <option value="mix">{t("screen_share_options.audio_mix")}</option>
-      </select>
+        {shareAudioModes(sharePlatform(navigator.userAgent)).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={mode === value}
+            disabled={modeDisabled(value)}
+            onClick={() => setMode(value)}
+            data-testid={`screenshare_audio_mode_${value}`}
+          >
+            {modeLabels[value]}
+          </button>
+        ))}
+      </div>
       <p
         className={styles.hint}
         data-warning={echo || failed}
@@ -281,20 +244,122 @@ export const ShareAudioSources: FC<Props> = ({ live }) => {
       >
         {hint}
       </p>
-      {mode !== "system" && (
-        <div
-          className={styles.sources}
-          data-inactive={mode !== "mix"}
-          data-testid="screenshare_audio_sources"
-        >
-          {group(
-            t("screen_share_options.audio_sinks"),
-            sinkRows,
-            "screenshare_audio_sinks",
+      {mode === "mix" && (
+        <div className={styles.sources} data-testid="screenshare_audio_sources">
+          <div className={styles.toolbar}>
+            <label className={styles.search} htmlFor={searchId}>
+              <SearchIcon aria-hidden width={16} height={16} />
+              <input
+                id={searchId}
+                type="search"
+                value={query}
+                placeholder={t("screen_share_options.audio_search")}
+                aria-label={t("screen_share_options.audio_search")}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <span
+              className={styles.count}
+              data-testid="screenshare_audio_count"
+            >
+              {t("screen_share_options.audio_count", counts)}
+            </span>
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => setMix(selectAllShareSources(mix, shown))}
+            >
+              {t("screen_share_options.audio_select_all")}
+            </button>
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => setMix(selectNoShareSources(mix, shown))}
+            >
+              {t("screen_share_options.audio_select_none")}
+            </button>
+          </div>
+          {shown.length === 0 && (
+            <p className={styles.empty}>
+              {groups.length === 0
+                ? t("screen_share_options.audio_no_sources")
+                : t("screen_share_options.audio_no_match")}
+            </p>
           )}
-          {group(t("screen_share_options.audio_share_sources"), shareRows)}
-          {group(t("screen_share_options.audio_inputs"), inputRows)}
-          {group(t("screen_share_options.audio_gone"), goneRows)}
+          {shown.map((group) => (
+            <fieldset
+              key={group.id}
+              className={styles.group}
+              data-testid={`screenshare_audio_group_${group.id}`}
+            >
+              <legend>{groupLabels[group.id]}</legend>
+              {group.rows.map((row) => {
+                const Icon = row.muted ? VolumeOffSolidIcon : VolumeOnSolidIcon;
+                return (
+                  <div
+                    key={row.id}
+                    className={styles.source}
+                    data-selected={row.selected}
+                    data-status={
+                      live && row.selected ? status[row.id] : undefined
+                    }
+                  >
+                    <label className={styles.name}>
+                      <input
+                        type="checkbox"
+                        checked={row.selected}
+                        onChange={(e) => toggle(row.id, e.target.checked)}
+                      />
+                      <span className={styles.text}>
+                        <span className={styles.title}>
+                          {row.label}
+                          {row.ownPlayback &&
+                            ` (${t("screen_share_options.audio_sink_own")})`}
+                        </span>
+                        {row.apps.length > 0 && (
+                          <span className={styles.apps}>
+                            {row.apps.join(", ")}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                    {row.selected && (
+                      <div className={styles.gain}>
+                        <button
+                          type="button"
+                          aria-label={t(
+                            "screen_share_options.audio_source_mute",
+                            { source: row.label },
+                          )}
+                          aria-pressed={row.muted}
+                          onClick={() => update(row.id, { muted: !row.muted })}
+                        >
+                          <Icon aria-hidden width={20} height={20} />
+                        </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={200}
+                          step={1}
+                          value={row.percent}
+                          aria-label={t(
+                            "screen_share_options.audio_source_gain",
+                            { source: row.label },
+                          )}
+                          onChange={(e) =>
+                            update(row.id, {
+                              gain: Number(e.target.value) / 100,
+                            })
+                          }
+                        />
+                        <span className={styles.percent}>{row.percent}%</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </fieldset>
+          ))}
         </div>
       )}
     </div>

@@ -90,10 +90,8 @@ import {
   screenShareLimitsForBudget,
   screenShareRequest,
 } from "../screenShareOptions";
-import {
-  type HostParticipantState,
-  hostParticipants$,
-} from "../hostCallState";
+import { type HostParticipantState, hostParticipants$ } from "../hostCallState";
+import { type SoundRoster, soundRoster } from "../callEventSounds";
 import { shareAudioMix, shareAudioMode } from "../shareAudioSink";
 import { createShareAudioMix, mixSourceKinds } from "../shareAudioMixer";
 import { type MuteStates } from "../MuteStates";
@@ -432,6 +430,13 @@ export interface CallViewModel {
   // sounds and events
   joinSoundEffect$: Observable<void>;
   leaveSoundEffect$: Observable<void>;
+  /**
+   * InterCom: who is in the call beside the user, by user. What the sounds of
+   * coming and going are worked out from (see `RosterCueGate`), in place of
+   * the two above, which count tiles: the user's own, those of the user's
+   * other devices and those of a membership that is there twice among them.
+   */
+  soundRoster$: Observable<SoundRoster>;
   /**
    * Emits an event every time a new hand is raised in
    * the call.
@@ -879,6 +884,10 @@ export function createCallViewModel$(
     // Avoid doubling up on any auto-leave sounds (e.g. the decline sound),
     // which are handled elsewhere
     takeUntil(autoLeave$),
+  );
+
+  const soundRoster$ = members$.pipe(
+    map((members) => soundRoster(members, userId)),
   );
 
   const userHangup$ = new Subject<void>();
@@ -1832,6 +1841,7 @@ export function createCallViewModel$(
     reactions$: reactions$,
     joinSoundEffect$: joinSoundEffect$,
     leaveSoundEffect$: leaveSoundEffect$,
+    soundRoster$: soundRoster$,
     newHandRaised$: newHandRaised$,
     newScreenShare$: newScreenShare$,
     audibleReactions$: audibleReactions$,

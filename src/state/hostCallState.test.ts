@@ -16,6 +16,8 @@ import {
   hostParticipants$,
   type HostStateMedia,
 } from "./hostCallState";
+import { type DeviceAvailability } from "./deviceAvailability";
+import { type AloneState } from "./aloneTimer";
 
 function media(
   userId: string,
@@ -113,6 +115,8 @@ describe("hostCallState$", () => {
   it("tells the host once things hold still, and only what changed", () => {
     const audioEnabled$ = new BehaviorSubject(true);
     const videoEnabled$ = new BehaviorSubject(false);
+    const audioState$ = new BehaviorSubject<DeviceAvailability>("on");
+    const videoState$ = new BehaviorSubject<DeviceAvailability>("no-device");
     const deafened$ = new BehaviorSubject(false);
     const sharingScreen$ = new BehaviorSubject(false);
     const reconnecting$ = new BehaviorSubject(false);
@@ -121,8 +125,11 @@ describe("hostCallState$", () => {
     const subscription = hostCallState$({
       audioEnabled$,
       videoEnabled$,
+      audioState$,
+      videoState$,
       deafened$,
       sharingScreen$,
+      canShareScreen: true,
       reconnecting$,
       participants$,
     }).subscribe((s) => seen.push(s));
@@ -133,8 +140,11 @@ describe("hostCallState$", () => {
       {
         audio_enabled: true,
         video_enabled: false,
+        audio_state: "on",
+        video_state: "no-device",
         deafened: false,
         screen_sharing: false,
+        can_share_screen: true,
         reconnecting: false,
         participants: [],
       },
@@ -152,12 +162,79 @@ describe("hostCallState$", () => {
       screen_sharing: true,
     });
 
+    // A camera that is plugged in, a microphone that is blocked
+    videoState$.next("off");
+    audioState$.next("no-permission");
+    vi.advanceTimersByTime(HOST_CALL_STATE_DEBOUNCE_MS);
+    expect(seen).toHaveLength(3);
+    expect(seen[2]).toMatchObject({
+      audio_state: "no-permission",
+      video_state: "off",
+    });
+
     // What changes and changes back within the wait is nothing to tell
     reconnecting$.next(true);
     reconnecting$.next(false);
     participants$.next([]);
     vi.advanceTimersByTime(HOST_CALL_STATE_DEBOUNCE_MS);
+    expect(seen).toHaveLength(3);
+    subscription.unsubscribe();
+  });
+
+  it("tells the host what is left of a countdown, when it changes", () => {
+    let now = 50_000;
+    const alone$ = new BehaviorSubject<AloneState | undefined>({
+      kind: "with-others",
+    });
+    const audioEnabled$ = new BehaviorSubject(true);
+    const seen: HostCallState[] = [];
+    const subscription = hostCallState$({
+      audioEnabled$,
+      videoEnabled$: new BehaviorSubject(false),
+      audioState$: new BehaviorSubject<DeviceAvailability>("on"),
+      videoState$: new BehaviorSubject<DeviceAvailability>("off"),
+      deafened$: new BehaviorSubject(false),
+      sharingScreen$: new BehaviorSubject(false),
+      canShareScreen: true,
+      reconnecting$: new BehaviorSubject(false),
+      participants$: new BehaviorSubject<HostParticipantState[]>([]),
+      alone$,
+      now: () => now,
+    }).subscribe((s) => seen.push(s));
+    const settle = (): void =>
+      void vi.advanceTimersByTime(HOST_CALL_STATE_DEBOUNCE_MS);
+
+    settle();
+    expect(seen).toHaveLength(1);
+    expect("alone" in seen[0]).toBe(false);
+
+    alone$.next({ kind: "alone", deadline: now + 300_000, seq: 1 });
+    settle();
+    expect(seen[1].alone).toEqual({ ms_left: 300_000, seq: 1 });
+
+    // Nothing is sent while it only counts down
+    now += 100_000;
+    settle();
     expect(seen).toHaveLength(2);
+
+    // What else changes carries what is left by then
+    audioEnabled$.next(false);
+    settle();
+    expect(seen[2].alone).toEqual({ ms_left: 200_000, seq: 1 });
+
+    // Staying is the same time left again, and still told: another countdown
+    now += 100_000;
+    audioEnabled$.next(true);
+    settle();
+    alone$.next({ kind: "alone", deadline: now + 300_000, seq: 2 });
+    settle();
+    expect(seen[4].alone).toEqual({ ms_left: 300_000, seq: 2 });
+
+    // Somebody came back
+    alone$.next({ kind: "with-others" });
+    settle();
+    expect(seen).toHaveLength(6);
+    expect("alone" in seen[5]).toBe(false);
     subscription.unsubscribe();
   });
 });

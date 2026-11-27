@@ -5,15 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-import { type FC, type JSX, type Ref, useMemo, useState } from "react";
+import { type FC, type JSX, type Ref, useMemo } from "react";
 import classNames from "classnames";
 
 import LogoMark from "../icons/LogoMark.svg?react";
 import LogoType from "../icons/LogoType.svg?react";
 import {
   EndCallButton,
-  ShareScreenButton,
-  ShareAudioButton,
   SettingsButton,
   ReactionToggleButton,
   LoudspeakerButton,
@@ -29,6 +27,9 @@ import { LayoutSwitch } from "../room/LayoutSwitch";
 import { type MediaMenuViewModel } from "./MediaMenuViewModel";
 import { MediaMenuButton } from "./MediaMenuButton";
 import { ScreenShareDialog, ShareAudioDialog } from "./ScreenShareDialog";
+import { ShareSplitButton } from "./ShareSplitButton";
+import { useShareControls } from "./useShareControls";
+import { setShareDialog, shareDialog$ } from "../state/quickShare";
 
 export interface AudioOutputSwitcher {
   targetOutput: string;
@@ -120,8 +121,12 @@ export const CallFooter: FC<FooterProps> = ({
   const buttonSize = useBehavior(vm.buttonSize$);
   const showLogo = useBehavior(vm.showLogo$);
 
-  const [shareDialogOpen, setShareDialogOpen] = useState(false);
-  const [shareAudioOpen, setShareAudioOpen] = useState(false);
+  const shareDialog = useBehavior(shareDialog$);
+  const shareControls = useShareControls(
+    toggleScreenSharing,
+    sharingScreen ?? false,
+    showModals,
+  );
   const buttons: JSX.Element[] = [];
 
   if (openSettings !== undefined) {
@@ -155,30 +160,18 @@ export const CallFooter: FC<FooterProps> = ({
 
   if (toggleScreenSharing !== undefined) {
     buttons.push(
-      <ShareScreenButton
+      <ShareSplitButton
         size={buttonSize}
         key="share_screen"
         className={styles.shareScreen}
-        enabled={sharingScreen ?? false}
-        // Stopping needs no questions; starting asks what to share and how
-        onClick={
-          sharingScreen || !showModals
-            ? toggleScreenSharing
-            : (): void => setShareDialogOpen(true)
-        }
-        data-testid="incall_screenshare"
+        sharing={sharingScreen ?? false}
+        // The button shares at once with what was used last (and asks the
+        // first time); the chevron opens the settings, or, while sharing,
+        // the sources of the share's audio
+        onShare={() => shareControls.press("button")}
+        onSettings={showModals ? shareControls.openSettings : undefined}
       />,
     );
-    // While sharing, the sources of the share's audio can be changed
-    if (sharingScreen && showModals)
-      buttons.push(
-        <ShareAudioButton
-          size={buttonSize}
-          key="share_audio"
-          onClick={() => setShareAudioOpen(true)}
-          data-testid="incall_share_audio"
-        />,
-      );
   }
 
   // Reaction button contains a pretty large menu, so treat it like a modal
@@ -262,22 +255,22 @@ export const CallFooter: FC<FooterProps> = ({
       {!hideControls && layoutSwitchVm && (
         <LayoutSwitch vm={layoutSwitchVm} className={styles.layout} />
       )}
-      {sharingScreen && showModals && shareAudioOpen && (
-        <ShareAudioDialog
-          open={shareAudioOpen}
-          onDismiss={() => setShareAudioOpen(false)}
-        />
+      {sharingScreen && showModals && shareDialog === "audio" && (
+        <ShareAudioDialog open onDismiss={() => setShareDialog(null)} />
       )}
-      {toggleScreenSharing !== undefined && showModals && shareDialogOpen && (
-        <ScreenShareDialog
-          open={shareDialogOpen}
-          onDismiss={() => setShareDialogOpen(false)}
-          onShare={() => {
-            setShareDialogOpen(false);
-            toggleScreenSharing();
-          }}
-        />
-      )}
+      {toggleScreenSharing !== undefined &&
+        showModals &&
+        !sharingScreen &&
+        shareDialog === "settings" && (
+          <ScreenShareDialog
+            open
+            onDismiss={() => setShareDialog(null)}
+            onShare={() => {
+              setShareDialog(null);
+              toggleScreenSharing();
+            }}
+          />
+        )}
     </div>
   );
 };

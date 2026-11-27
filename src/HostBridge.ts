@@ -6,7 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { createContext, use } from "react";
-import { fromEvent, map, NEVER, type Observable } from "rxjs";
+import { filter, fromEvent, map, NEVER, type Observable, share } from "rxjs";
 import {
   type IWidgetApiRequest,
   type IWidgetApiRequestData,
@@ -24,7 +24,14 @@ import {
   parseHostVoiceState,
 } from "./state/callActions";
 import { type HostCallState } from "./state/hostCallState";
+import { type HostConnStats } from "./diagnostics/connStats";
 import { type HostSounds, parseHostSounds } from "./state/callEventSounds";
+import {
+  type HostOverlayChannel,
+  type OverlayEvent,
+  parseOverlayEvent,
+  parseOverlayPlacement,
+} from "./state/hostOverlay";
 
 // Note: these are type aliases rather than interfaces so that they satisfy the
 // widget API's index-signature payload types.
@@ -89,6 +96,12 @@ export interface HostBridge {
    */
   notifyCallState(state: HostCallState): Promise<void>;
   /**
+   * Tells the host how the connection is, for its signal bars and, while it
+   * asked for them, the details. Absent where there is no host; a host that
+   * does not know the message rejects it, which is nothing to act on.
+   */
+  notifyConnStats?(stats: HostConnStats): Promise<void>;
+  /**
    * Asks the host for the user's mute and deafen, which a host that keeps
    * them (InterCom) has also outside a call: the call is joined with them.
    * Resolves to undefined where there is no such host.
@@ -101,6 +114,13 @@ export interface HostBridge {
    * there is no such host.
    */
   requestSounds(): Promise<HostSounds | undefined>;
+  /**
+   * Tells the host that the call played the sound of somebody else leaving,
+   * so that a host that plays the user's own leave (InterCom) does not play
+   * the same sound again when the user's own leave follows at once. A host
+   * that does not know the message rejects it, which is nothing to act on.
+   */
+  notifyLeaveSoundPlayed(): Promise<void>;
   /**
    * Asks the host to close Element Call, and stops communicating with it. No
    * further calls should be made on this bridge afterwards.
@@ -165,6 +185,12 @@ export interface HostBridge {
    * does not know the request answers `listSinks` with `supported: false`.
    */
   shareAudio?: ShareAudioHost;
+  /**
+   * The host's whole window for the call's dialogs, on hosts that keep the
+   * call in a part of it (InterCom). Absent where there is no host to ask; a
+   * host that does not know the request leaves the dialogs where they are.
+   */
+  overlay?: HostOverlayChannel;
 }
 
 /** An output whose sound could be shared. */
@@ -223,6 +249,40 @@ function toShareSinks(value: unknown): ShareSink[] {
     }));
 }
 
+/** The widget action of the overlay requests, a contract with the host. */
+export const OVERLAY_ACTION = "io.intercom.overlay";
+
+/** The overlay over the widget API, for a host that answers the action. */
+export function createWidgetOverlay(
+  send: (data: IWidgetApiRequestData) => Promise<unknown>,
+  requests$: Observable<HostRequest<unknown, Record<string, never>>>,
+): HostOverlayChannel {
+  return {
+    open: async () => {
+      try {
+        return parseOverlayPlacement(await send({ op: "open" }));
+      } catch {
+        // A host that does not know the action says so with an error
+        return undefined;
+      }
+    },
+    close: async () => {
+      try {
+        await send({ op: "close" });
+      } catch {
+        // Nothing to be done about it from here
+      }
+    },
+    events$: requests$.pipe(
+      map((request) => {
+        request.reply({});
+        return parseOverlayEvent(request.data);
+      }),
+      filter((event): event is OverlayEvent => event !== undefined),
+    ),
+  };
+}
+
 /** Share audio over the widget API, for a host that answers the action. */
 export function createWidgetShareAudio(
   send: (data: IWidgetApiRequestData) => Promise<unknown>,
@@ -277,6 +337,7 @@ export const nullHostBridge: HostBridge = {
   notifyCallState: async () => {},
   requestVoiceState: async () => await Promise.resolve(undefined),
   requestSounds: async () => await Promise.resolve(undefined),
+  notifyLeaveSoundPlayed: async () => {},
   themeChange$: NEVER,
   join$: NEVER,
   hangUp$: NEVER,
@@ -331,6 +392,8 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
       send(ElementWidgetActions.DeviceMute, state),
     notifyCallState: async (state) =>
       send(ElementWidgetActions.CallState, state),
+    notifyConnStats: async (stats) =>
+      send(ElementWidgetActions.ConnStats, stats),
     requestVoiceState: async () => {
       try {
         return parseHostVoiceState(
@@ -351,6 +414,8 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
         return undefined;
       }
     },
+    notifyLeaveSoundPlayed: async () =>
+      send(ElementWidgetActions.Sounds, { played: "leave" }),
     close: async () => {
       try {
         await send(ElementWidgetActions.Close);
@@ -392,6 +457,12 @@ export function createWidgetHostBridge(widget: WidgetHelpers): HostBridge {
     },
     shareAudio: createWidgetShareAudio(async (data) =>
       widget.api.transport.send(SHARE_AUDIO_ACTION, data),
+    ),
+    overlay: createWidgetOverlay(
+      async (data) => widget.api.transport.send(OVERLAY_ACTION, data),
+      requests<unknown, Record<string, never>>(
+        ElementWidgetActions.Overlay,
+      ).pipe(share()),
     ),
     downloadMedia: async (mxcUri) => {
       const { file } = await widget.api.downloadFile(mxcUri);

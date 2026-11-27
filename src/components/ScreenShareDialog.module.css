@@ -5,21 +5,139 @@ SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
 Please see LICENSE in the repository root for full details.
 */
 
-.dialog {
-  max-inline-size: 440px;
+/* Up to 880 by 680, and never more than the frame has: in a host that gives
+the call's dialogs its whole window that is the window, elsewhere the call. */
+.dialog.dialog {
+  inline-size: 880px;
+  max-inline-size: calc(100% - 24px);
+  max-block-size: min(680px, calc(100% - 24px));
+}
+
+.audioDialog.audioDialog {
+  inline-size: 520px;
+  max-inline-size: calc(100% - 24px);
+  max-block-size: min(640px, calc(100% - 24px));
+}
+
+/* The one thing that scrolls: the columns, with the foot staying in view */
+.body.body {
+  padding: 0;
+  container-type: inline-size;
 }
 
 .content {
   display: flex;
   flex-direction: column;
+  min-block-size: 100%;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--cpd-space-6x);
+  /* In line with the dialog's title */
+  padding: var(--cpd-space-5x) var(--cpd-space-10x) var(--cpd-space-6x);
+  flex: 1;
+}
+
+.single {
+  padding: var(--cpd-space-5x) var(--cpd-space-10x) var(--cpd-space-6x);
+  flex: 1;
+}
+
+@container (min-width: 760px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--cpd-space-8x);
+  }
+}
+
+@container (max-width: 520px) {
+  .columns,
+  .single {
+    padding: var(--cpd-space-4x) var(--cpd-space-6x);
+  }
+
+  .footer {
+    padding-inline: var(--cpd-space-6x);
+  }
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
   gap: var(--cpd-space-4x);
-  padding-block-end: var(--cpd-space-2x);
+  min-inline-size: 0;
+}
+
+.column h3 {
+  margin: 0;
+  font: var(--cpd-font-body-sm-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cpd-color-text-secondary);
+}
+
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cpd-space-2x);
+}
+
+.preset {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--cpd-space-3x) var(--cpd-space-4x);
+  text-align: start;
+  color: var(--cpd-color-text-primary);
+  background: var(--cpd-color-bg-subtle-secondary);
+  border: 1px solid var(--cpd-color-border-disabled);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .preset:hover {
+    background: var(--cpd-color-bg-subtle-primary);
+  }
+}
+
+.preset[aria-checked="true"] {
+  border-color: var(--intercom-accent, #6875f5);
+  background: color-mix(
+    in srgb,
+    var(--intercom-accent, #6875f5) 12%,
+    var(--cpd-color-bg-subtle-secondary)
+  );
+}
+
+.preset:focus-visible {
+  outline: 2px solid var(--cpd-color-border-focused);
+  outline-offset: 1px;
+}
+
+.presetLabel {
+  font: var(--cpd-font-body-md-semibold);
+}
+
+.presetHint {
+  font: var(--cpd-font-body-sm-regular);
+  color: var(--cpd-color-text-secondary);
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--cpd-space-3x);
 }
 
 .field {
   display: flex;
   flex-direction: column;
   gap: var(--cpd-space-1x);
+  min-inline-size: 0;
 }
 
 .field label {
@@ -30,6 +148,8 @@ Please see LICENSE in the repository root for full details.
 .field select,
 .field input {
   appearance: auto;
+  box-sizing: border-box;
+  inline-size: 100%;
   block-size: 36px;
   padding-inline: var(--cpd-space-2x);
   font: var(--cpd-font-body-md-regular);
@@ -63,6 +183,9 @@ Please see LICENSE in the repository root for full details.
   cursor: pointer;
   font: var(--cpd-font-body-sm-medium);
   color: var(--cpd-color-text-secondary);
+}
+
+.advanced[open] summary {
   margin-block-end: var(--cpd-space-3x);
 }
 
@@ -72,8 +195,36 @@ Please see LICENSE in the repository root for full details.
   gap: var(--cpd-space-3x);
 }
 
+.advanced summary:focus-visible {
+  outline: 2px solid var(--cpd-color-border-focused);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.footer {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cpd-space-3x);
+  padding: var(--cpd-space-3x) var(--cpd-space-10x);
+  background: var(--cpd-color-bg-subtle-secondary);
+  border-block-start: 1px solid var(--cpd-color-border-disabled);
+}
+
+.summary {
+  flex: 1 1 200px;
+  margin: 0;
+  min-inline-size: 0;
+  font: var(--cpd-font-body-sm-regular);
+  color: var(--cpd-color-text-secondary);
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--cpd-space-3x);
+  margin-inline-start: auto;
 }

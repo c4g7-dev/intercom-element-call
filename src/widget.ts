@@ -52,6 +52,11 @@ export enum ElementWidgetActions {
   // own microphone, camera, deafening and screen share, and who of the
   // members is speaking, muted or sharing), sent when it changes
   CallState = "io.intercom.call_state",
+  // InterCom, fromWidget: how the connection is, `{ quality, rtt_ms?,
+  // loss_pct?, detail? }` (see `HostConnStats`): when the quality or the
+  // rounded figures change, and every second with `detail` while the host
+  // asked for that with the call action "connection-details-on"
+  ConnStats = "io.intercom.conn_stats",
   // InterCom, both ways: the user's mute and deafen, which are the host's to
   // keep (they hold without a call and over restarts).
   // toWidget: `{ muted, deafened, muted_before_deafen }`, which the call
@@ -61,8 +66,18 @@ export enum ElementWidgetActions {
   // InterCom, fromWidget: `{}`, asked once when the call is joined. The reply
   // is `{ host_cues, sounds: { join?: { data }, leave?: { data } } }`: whether
   // the host plays the user's own join and leave sounds, and the user's own
-  // sound files (base64) to play instead of the built-in ones
+  // sound files (base64) to play instead of the built-in ones.
+  // Also fromWidget: `{ played: "leave" }`, when the call played the sound of
+  // somebody else leaving; the host then keeps its own leave sound back for a
+  // moment, so that the end of a call is one sound. The reply is `{}`
   Sounds = "io.intercom.sounds",
+  // InterCom, both ways: the host's whole window for the call's dialogs.
+  // fromWidget: `{ op: "open" }`, answered `{ supported, rect, window }` (the
+  //   place of the call in the host's window and that window's size), and
+  //   `{ op: "close" }`
+  // toWidget: `{ op: "layout", supported, rect, window }` when they change,
+  //   `{ op: "dismiss" }` when the user asked the host to close the dialog
+  Overlay = "io.intercom.overlay",
 }
 
 export interface JoinCallData {
@@ -125,6 +140,7 @@ export const initializeWidget = (
         ElementWidgetActions.DeviceMute,
         ElementWidgetActions.CallAction,
         ElementWidgetActions.VoiceState,
+        ElementWidgetActions.Overlay,
       ].forEach((action) => {
         api.on(`action:${action}`, (ev: CustomEvent<IWidgetApiRequest>) => {
           ev.preventDefault();

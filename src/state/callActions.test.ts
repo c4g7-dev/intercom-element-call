@@ -15,7 +15,10 @@ import {
   isCallAction,
   parseHostVoiceState,
 } from "./callActions";
+import { constant } from "./Behavior";
 import { diagBuffer, diagOutput, resetDiag } from "../diagnostics/diag";
+import { detailedReadings$ } from "../diagnostics/CallDiagnostics";
+import { diagnosticsOverlay } from "../settings/settings";
 
 function device(
   enabled: boolean,
@@ -87,6 +90,7 @@ describe("callActionForKey", () => {
     expect(callActionForKey(key("m"))).toBe("toggle-mute");
     expect(callActionForKey(key("D"))).toBe("toggle-deafen");
     expect(callActionForKey(key("V"))).toBe("toggle-camera");
+    expect(callActionForKey(key("S"))).toBe("toggle-screenshare");
   });
 
   it("leaves every other key and combination alone", () => {
@@ -118,6 +122,13 @@ describe("isCallAction", () => {
       "unmute",
       "toggle-camera",
       "toggle-deafen",
+      "toggle-screenshare",
+      "screenshare-settings",
+      "toggle-diagnostics",
+      "connection-details-on",
+      "connection-details-off",
+      "stay-in-call",
+      "alone-timeout",
     ])
       expect(isCallAction(action)).toBe(true);
     for (const other of [
@@ -371,5 +382,120 @@ describe("the host's mute and deafen", () => {
       audio_enabled: true,
       deafened: false,
     });
+  });
+});
+
+describe("the screen share actions", () => {
+  it("press the share button and open its settings, as the call wired them", () => {
+    const toggle = vi.fn();
+    const openShareSettings = vi.fn();
+    const off = { enabled$: constant(false), setEnabled$: constant(null) };
+    const actions = createCallActions({
+      audio: off,
+      video: off,
+      playSound: vi.fn(),
+      toggleScreenShare: () => toggle,
+      openShareSettings,
+    });
+    actions.perform("toggle-screenshare", "test");
+    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(openShareSettings).not.toHaveBeenCalled();
+    actions.perform("screenshare-settings", "test");
+    expect(openShareSettings).toHaveBeenCalledTimes(1);
+    actions.reset();
+  });
+
+  it("do nothing where the call cannot share", () => {
+    const off = { enabled$: constant(false), setEnabled$: constant(null) };
+    const actions = createCallActions({
+      audio: off,
+      video: off,
+      toggleScreenShare: () => null,
+    });
+    expect(() => actions.perform("toggle-screenshare", "test")).not.toThrow();
+    expect(() => actions.perform("screenshare-settings", "test")).not.toThrow();
+    actions.reset();
+  });
+});
+
+describe("the diagnostics actions", () => {
+  const off = { enabled$: constant(false), setEnabled$: constant(null) };
+
+  it("toggle the overlay, and take whether the host shows the connection's details", () => {
+    resetDiag();
+    const toggleDiagnostics = vi.fn();
+    const setConnectionDetails = vi.fn();
+    const actions = createCallActions({
+      audio: off,
+      video: off,
+      toggleDiagnostics,
+      setConnectionDetails,
+    });
+    actions.perform("toggle-diagnostics", "host");
+    expect(toggleDiagnostics).toHaveBeenCalledTimes(1);
+    expect(setConnectionDetails).not.toHaveBeenCalled();
+
+    expect(actions.perform("connection-details-on", "host")).toEqual(
+      actions.state(),
+    );
+    expect(setConnectionDetails).toHaveBeenLastCalledWith(true);
+    actions.perform("connection-details-off", "host");
+    expect(setConnectionDetails).toHaveBeenLastCalledWith(false);
+    // A popover opening is not a thing to write down; the overlay is
+    expect(
+      diagBuffer()
+        .filter((r) => r.type === "call_action")
+        .map((r) => r.action),
+    ).toEqual(["toggle-diagnostics"]);
+
+    // The call ends: nobody watches a call that is not there
+    setConnectionDetails.mockClear();
+    actions.reset();
+    expect(setConnectionDetails).toHaveBeenCalledWith(false);
+  });
+
+  it("stay in a call the user is alone in, and take another timeout for it", () => {
+    const stayInCall = vi.fn();
+    const setAloneTimeout = vi.fn();
+    const actions = createCallActions({
+      audio: off,
+      video: off,
+      stayInCall,
+      setAloneTimeout,
+    });
+    expect(actions.perform("stay-in-call", "host")).toEqual(actions.state());
+    expect(stayInCall).toHaveBeenCalledTimes(1);
+    expect(setAloneTimeout).not.toHaveBeenCalled();
+
+    actions.perform("alone-timeout", "host", {
+      action: "alone-timeout",
+      timeout: 180,
+    });
+    expect(setAloneTimeout).toHaveBeenLastCalledWith(180);
+    actions.perform("alone-timeout", "host", { timeout: "never" });
+    expect(setAloneTimeout).toHaveBeenLastCalledWith("never");
+    // Nothing came with it: for whoever takes it to make sense of
+    actions.perform("alone-timeout", "host");
+    expect(setAloneTimeout).toHaveBeenLastCalledWith(undefined);
+    expect(stayInCall).toHaveBeenCalledTimes(1);
+
+    // A call that has no countdown does nothing about either
+    const plain = createCallActions({ audio: off, video: off });
+    expect(plain.perform("stay-in-call", "host")).toEqual(plain.state());
+    expect(plain.perform("alone-timeout", "host")).toEqual(plain.state());
+  });
+
+  it("are the overlay's setting and the pace of the readings where nothing else is given", () => {
+    const actions = createCallActions({ audio: off, video: off });
+    const before = diagnosticsOverlay.getValue();
+    actions.perform("toggle-diagnostics", "host");
+    expect(diagnosticsOverlay.getValue()).toBe(!before);
+    actions.perform("toggle-diagnostics", "host");
+    expect(diagnosticsOverlay.getValue()).toBe(before);
+
+    actions.perform("connection-details-on", "host");
+    expect(detailedReadings$.value).toBe(true);
+    actions.reset();
+    expect(detailedReadings$.value).toBe(false);
   });
 });

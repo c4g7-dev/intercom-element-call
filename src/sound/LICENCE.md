@@ -33,3 +33,4 @@ works them out from sine waves, and they are covered by the licence of this repo
 
 - `intercom_join`
 - `intercom_leave`
+- `intercom_ringback` (one round of a loop: what is heard while the other side is being rung)

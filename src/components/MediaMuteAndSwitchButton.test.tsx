@@ -171,6 +171,57 @@ describe("MediaMuteAndSwitchButton", () => {
     expect(requestDeviceNames).toHaveBeenCalled();
   });
 
+  test("says that there is no microphone, on the button and in the menu", async () => {
+    const user = userEvent.setup();
+    const onMute = vi.fn();
+    renderComponent(
+      <MediaMuteAndSwitchButton
+        iconsAndLabels="audio"
+        unavailable="no-device"
+        onMuteClick={onMute}
+        options={[]}
+        outputOptions={[
+          { label: { type: "name", name: "Headphones" }, id: "out1" },
+        ]}
+        selectedOutputOption="out1"
+      />,
+    );
+
+    const mute = screen.getByRole("switch", { name: "Microphone" });
+    expect(mute).toHaveAttribute("aria-disabled", "true");
+    expect(mute).toHaveAccessibleDescription("No microphone found");
+    await user.click(mute);
+    expect(onMute).not.toHaveBeenCalled();
+
+    // The speaker can still be picked
+    await user.click(screen.getByRole("button", { name: "Microphone" }));
+    screen.getByRole("menuitemradio", { name: "Headphones" });
+    expect(
+      screen.getByRole("menuitem", { name: "No microphone found" }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("says that the camera is blocked, with the cameras still listed", async () => {
+    const user = userEvent.setup();
+    renderComponent(
+      <MediaMuteAndSwitchButton
+        iconsAndLabels="video"
+        unavailable="no-permission"
+        options={[{ label: { type: "number", number: 1 }, id: "cam1" }]}
+        selectedOption="cam1"
+      />,
+    );
+
+    expect(
+      screen.getByRole("switch", { name: "Camera" }),
+    ).toHaveAccessibleDescription(
+      "Camera access blocked — check system settings",
+    );
+    await user.click(screen.getByRole("button", { name: "Camera" }));
+    screen.getByRole("menuitemradio", { name: "Camera 1" });
+    expect(screen.queryByText("No camera found")).toBeNull();
+  });
+
   test("shows numbered devices correctly", async () => {
     const user = userEvent.setup();
     renderComponent(

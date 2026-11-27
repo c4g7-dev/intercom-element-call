@@ -40,6 +40,11 @@ import type { ObservableScope } from "../state/ObservableScope";
 import { type MuteStates } from "../state/MuteStates";
 import { createStaticViewModel, type ViewModel } from "../state/ViewModel";
 import { type BackgroundEffectGridItem } from "./BackgroundEffectGrid";
+import {
+  deviceAvailability$,
+  type DeviceUnavailability,
+  unavailability,
+} from "../state/deviceAvailability";
 
 export interface BackgroundImageRefusal {
   reason: UnusableReason | "not-kept";
@@ -57,6 +62,8 @@ export interface MediaMenuSnapshot {
   busy: boolean;
   /** Turns the device on or off. Undefined while it can't be toggled. (disable interaction state) */
   toggle: (() => void) | undefined;
+  /** Why the device cannot be turned on at all, if it cannot. */
+  unavailable: DeviceUnavailability | undefined;
   options: MenuOptions[];
   selected: string | undefined;
   select: ((id: string) => void) | undefined;
@@ -135,6 +142,13 @@ export function createAudioMenuViewModel(
     enabled$: audio.enabled$,
     busy$: audio.syncing$,
     toggle$: scope.behavior(audio.toggle$.pipe(map((t) => t ?? undefined))),
+    unavailable$: scope.behavior(
+      deviceAvailability$("microphone", {
+        available$: mediaDevices.audioInput.available$,
+        enabled$: audio.enabled$,
+      }).pipe(map(unavailability)),
+      undefined,
+    ),
     options$: scope.behavior(
       options$(disableSwitcher$, mediaDevices.audioInput.available$),
     ),
@@ -205,6 +219,13 @@ export function createCameraMenuViewModel(
     enabled$: video.enabled$,
     busy$: video.syncing$,
     toggle$: scope.behavior(video.toggle$.pipe(map((t) => t ?? undefined))),
+    unavailable$: scope.behavior(
+      deviceAvailability$("camera", {
+        available$: mediaDevices.videoInput.available$,
+        enabled$: video.enabled$,
+      }).pipe(map(unavailability)),
+      undefined,
+    ),
     options$: scope.behavior(
       options$(disableSwitcher$, mediaDevices.videoInput.available$),
     ),

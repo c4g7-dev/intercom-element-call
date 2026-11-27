@@ -20,6 +20,9 @@ import {
 import {
   screenShareAudioMix,
   screenShareAudioSource,
+  screenShareConfigured,
+  screenShareCustomFramerate,
+  screenSharePreset,
 } from "../settings/settings";
 import { shareAudioMixStatus$ } from "../state/shareAudioMixer";
 import { MediaDevicesContext } from "../MediaDevicesContext";
@@ -117,25 +120,22 @@ describe("the share dialog's audio sources", () => {
   const pickMix = async (
     user: ReturnType<typeof userEvent.setup>,
   ): Promise<void> => {
-    await user.selectOptions(
-      screen.getByTestId("screenshare_audio_source"),
-      "mix",
-    );
-    await screen.findByTestId("screenshare_audio_sinks");
+    await user.click(screen.getByRole("radio", { name: "Chosen sources" }));
+    await screen.findByTestId("screenshare_audio_group_outputs");
   };
 
   it("lists the host's outputs with what plays into them, the share sources and the inputs", async () => {
     const user = userEvent.setup();
     renderDialog(host());
     await pickMix(user);
-    const group = screen.getByTestId("screenshare_audio_sinks");
-    expect(group).toHaveTextContent("Apps playing into…");
+    const group = screen.getByTestId("screenshare_audio_group_outputs");
+    expect(group).toHaveTextContent("Apps and outputs");
     expect(
-      screen.getByRole("checkbox", { name: "Virtual Music — Spotify, mpv" }),
+      screen.getByRole("checkbox", { name: /^Virtual Music/ }),
     ).not.toBeChecked();
     expect(
       screen.getByRole("checkbox", {
-        name: "Virtual Discord — InterCom (this call plays here)",
+        name: /^Virtual Discord \(this call plays here\)/,
       }),
     ).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Microphone" })).toBeVisible();
@@ -157,13 +157,12 @@ describe("the share dialog's audio sources", () => {
     async (_why, shareAudio) => {
       const user = userEvent.setup();
       renderDialog(shareAudio);
-      await user.selectOptions(
-        screen.getByTestId("screenshare_audio_source"),
-        "mix",
-      );
+      await user.click(screen.getByRole("radio", { name: "Chosen sources" }));
       if (shareAudio)
         await waitFor(() => expect(shareAudio.listSinks).toHaveBeenCalled());
-      expect(screen.queryByTestId("screenshare_audio_sinks")).toBeNull();
+      expect(
+        screen.queryByTestId("screenshare_audio_group_outputs"),
+      ).toBeNull();
       expect(
         screen.getByRole("checkbox", { name: "InterCom-Share-Music" }),
       ).toBeInTheDocument();
@@ -180,9 +179,7 @@ describe("the share dialog's audio sources", () => {
       expect(screen.queryByTestId("screenshare_audio_sources")).toBeNull(),
     );
     await pickMix(user);
-    await user.click(
-      screen.getByRole("checkbox", { name: "Virtual Music — Spotify, mpv" }),
-    );
+    await user.click(screen.getByRole("checkbox", { name: /^Virtual Music/ }));
     await user.click(
       screen.getByRole("checkbox", { name: "InterCom-Share-Phone" }),
     );
@@ -199,7 +196,7 @@ describe("the share dialog's audio sources", () => {
     fireEvent.change(slider, { target: { value: "150" } });
     await user.click(
       screen.getByRole("button", {
-        name: "Mute Virtual Music — Spotify, mpv",
+        name: "Mute Virtual Music",
       }),
     );
     expect(screenShareAudioMix.getValue()).toEqual([
@@ -207,9 +204,7 @@ describe("the share dialog's audio sources", () => {
       { id: "d-phone", gain: 1.5, muted: false },
     ]);
 
-    await user.click(
-      screen.getByRole("checkbox", { name: "Virtual Music — Spotify, mpv" }),
-    );
+    await user.click(screen.getByRole("checkbox", { name: /^Virtual Music/ }));
     expect(screenShareAudioMix.getValue()).toEqual([
       { id: "d-phone", gain: 1.5, muted: false },
     ]);
@@ -217,11 +212,12 @@ describe("the share dialog's audio sources", () => {
 
   it("ticking a source chooses the mix", async () => {
     const user = userEvent.setup();
+    // What an older version left behind: a source picked under another mode
     screenShareAudioSource.setValue("none");
     renderDialog(host());
-    await user.click(
-      await screen.findByRole("checkbox", { name: "Microphone" }),
-    );
+    expect(screen.queryByTestId("screenshare_audio_sources")).toBeNull();
+    await pickMix(user);
+    await user.click(screen.getByRole("checkbox", { name: "Microphone" }));
     expect(screenShareAudioSource.getValue()).toBe("mix");
     expect(screenShareAudioMix.getValue()).toEqual([
       { id: "mic", gain: 1, muted: false },
@@ -233,18 +229,68 @@ describe("the share dialog's audio sources", () => {
     screenShareAudioSource.setValue("mix");
     screenShareAudioMix.setValue([{ id: "mic", gain: 1.4, muted: false }]);
     renderDialog(host());
-    const mode = screen.getByTestId("screenshare_audio_source");
-    await user.selectOptions(mode, "none");
-    expect(screen.getByTestId("screenshare_audio_sources")).toHaveAttribute(
-      "data-inactive",
-      "true",
-    );
-    await user.selectOptions(mode, "system");
-    await user.selectOptions(mode, "mix");
+    await user.click(screen.getByRole("radio", { name: "No audio" }));
+    // The list is only there for the mix
+    expect(screen.queryByTestId("screenshare_audio_sources")).toBeNull();
+    await user.click(screen.getByRole("radio", { name: "System audio" }));
+    expect(screen.getByRole("radio", { name: "System audio" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "Chosen sources" }));
     expect(screenShareAudioMix.getValue()).toEqual([
       { id: "mic", gain: 1.4, muted: false },
     ]);
     expect(screen.getByRole("checkbox", { name: "Microphone" })).toBeChecked();
+  });
+
+  it("finds sources by their name or by an app playing into them", async () => {
+    const user = userEvent.setup();
+    renderDialog(host());
+    await pickMix(user);
+    await user.type(
+      screen.getByRole("searchbox", { name: "Search sources and apps" }),
+      "spotify",
+    );
+    expect(
+      screen.getByRole("checkbox", { name: /^Virtual Music/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Microphone" })).toBeNull();
+    // "All" takes what the search shows, and nothing else
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(screenShareAudioMix.getValue()).toEqual([
+      { id: "sink:virtual-music", gain: 1, muted: false },
+    ]);
+    await user.clear(
+      screen.getByRole("searchbox", { name: "Search sources and apps" }),
+    );
+    expect(screen.getByTestId("screenshare_audio_count")).toHaveTextContent(
+      "1 of 4",
+    );
+    await user.click(screen.getByRole("button", { name: "None" }));
+    expect(screenShareAudioMix.getValue()).toEqual([]);
+  });
+
+  it("offers what to optimise for as cards, and says what the share will be", async () => {
+    const user = userEvent.setup();
+    screenSharePreset.setValue("sharp");
+    screenShareCustomFramerate.setValue(0);
+    renderDialog(host());
+    expect(screen.getByRole("radio", { name: /Text \/ sharp/ })).toBeChecked();
+    expect(screen.getByTestId("screenshare_summary")).toHaveTextContent(
+      "Text / sharp · Auto (max 1440p) · 30 fps · System audio",
+    );
+    await user.click(screen.getByRole("radio", { name: /Motion \/ smooth/ }));
+    expect(screenSharePreset.getValue()).toBe("motion");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Frame rate" }),
+      "120",
+    );
+    expect(screenShareCustomFramerate.getValue()).toBe(120);
+    await pickMix(user);
+    await user.click(screen.getByRole("checkbox", { name: "Microphone" }));
+    expect(screen.getByTestId("screenshare_summary")).toHaveTextContent(
+      "Motion / smooth · Auto (max 1440p) · 120 fps · 1 audio source",
+    );
+    screenSharePreset.setValue("sharp");
+    screenShareCustomFramerate.setValue(0);
   });
 
   it("reads the one source an older version stored as a mix of one", async () => {
@@ -256,7 +302,7 @@ describe("the share dialog's audio sources", () => {
     ]);
     expect(
       await screen.findByRole("checkbox", {
-        name: "Virtual Music — Spotify, mpv",
+        name: /^Virtual Music/,
       }),
     ).toBeChecked();
   });
@@ -282,7 +328,7 @@ describe("the share dialog's audio sources", () => {
     );
     await user.click(
       screen.getByRole("checkbox", {
-        name: "Virtual Discord — InterCom (this call plays here)",
+        name: /^Virtual Discord \(this call plays here\)/,
       }),
     );
     const warning = await screen.findByText(/would hear themselves back/);
@@ -293,8 +339,12 @@ describe("the share dialog's audio sources", () => {
     const user = userEvent.setup();
     const onShare = vi.fn();
     renderDialog(host(), { onShare });
+    screenShareConfigured.setValue(false);
     await user.click(screen.getByTestId("screenshare_start"));
     expect(onShare).toHaveBeenCalled();
+    // From here on the share button needs no dialog
+    expect(screenShareConfigured.getValue()).toBe(true);
+    screenShareConfigured.setValue(false);
   });
 });
 
@@ -312,11 +362,9 @@ describe("the sources of the share that is on", () => {
   it("can be added to, taken from and balanced, but not switched to the picker's audio", async () => {
     const user = userEvent.setup();
     renderDialog(host(), { live: true });
-    await screen.findByTestId("screenshare_audio_sinks");
-    expect(screen.getByRole("option", { name: /System audio/ })).toBeDisabled();
-    await user.click(
-      screen.getByRole("checkbox", { name: "Virtual Music — Spotify, mpv" }),
-    );
+    await screen.findByTestId("screenshare_audio_group_outputs");
+    expect(screen.getByRole("radio", { name: "System audio" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: /^Virtual Music/ }));
     await user.click(screen.getByRole("checkbox", { name: "Microphone" }));
     expect(screenShareAudioMix.getValue()).toEqual([
       { id: "sink:virtual-music", gain: 1, muted: false },
@@ -335,7 +383,10 @@ describe("the sources of the share that is on", () => {
   it("is fixed for a share that takes its sound from the picker", () => {
     screenShareAudioSource.setValue("system");
     renderDialog(host(), { live: true });
-    expect(screen.getByTestId("screenshare_audio_source")).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "No audio" })).toBeDisabled();
+    expect(
+      screen.getByRole("radio", { name: "Chosen sources" }),
+    ).toBeDisabled();
     expect(screen.getByText(/only be changed by sharing again/)).toBeVisible();
     expect(screen.queryByTestId("screenshare_audio_sources")).toBeNull();
   });

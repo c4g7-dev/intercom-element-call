@@ -32,6 +32,9 @@ this file gives the upstream look back and a rebase touches one line per rule. *
   /* The scrims behind the header and footer fade to the canvas colour as
   upstream's do, but over a shorter distance */
   --intercom-scrim-start: 40%;
+
+  /* The host's accent: what is selected, and nothing else */
+  --intercom-accent: #6875f5;
 }
 
 /* A near-black dark default, in step with the host's InterCom Dark: the call
@@ -63,4 +66,49 @@ rather than blue-tinted */
 /* No decorative page gradient */
 [data-element-call-root][data-background="gradient"]::before {
   background-image: none !important;
+}
+
+/* A dialog of the call open in a host that gave the call's frame its whole
+window (see useHostOverlay): the call view stays where it was in that window,
+at the size it had, and the rest of the frame is see-through, so that the
+host shows under the dialog's backdrop. The view is a query container of its
+own then, so that what is laid out against the call's size does not take the
+window's instead. */
+:root[data-intercom-overlay="pinned"],
+:root[data-intercom-overlay="pinned"] > body {
+  background: transparent !important;
+}
+
+:root[data-intercom-overlay="pinned"] #root {
+  position: fixed;
+  inset-inline-start: var(--intercom-pin-x);
+  inset-block-start: var(--intercom-pin-y);
+  inline-size: var(--intercom-pin-width);
+  block-size: var(--intercom-pin-height) !important;
+  overflow: hidden;
+  background: var(--cpd-color-bg-canvas-default);
+  /* Whatever is fixed inside the call view is fixed to it, not to the frame */
+  contain: layout;
+  container: element-call / size;
+}
+
+/* The backdrop of a dialog: the darkest surface, without a tint, so that
+over the host the dimmed app and the dimmed call are one thing */
+[data-intercom-backdrop][data-intercom-backdrop] {
+  background: rgb(10 10 12 / 68%);
+}
+
+/* Dialogs as the host draws them: one surface with a hairline and a 16 px
+radius, without the translucent frame around it */
+[role="dialog"][class*="_glass_"] {
+  padding: 0;
+  border-radius: 16px;
+  background: none;
+  backdrop-filter: none;
+  outline: 1px solid var(--cpd-color-border-interactive-secondary);
+  outline-offset: -1px;
+}
+
+[role="dialog"][class*="_glass_"] > :first-child {
+  border-radius: 16px;
 }

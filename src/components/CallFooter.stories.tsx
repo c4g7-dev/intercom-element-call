@@ -23,6 +23,13 @@ import { globalScope } from "../state/ObservableScope";
 import { constant } from "../state/Behavior";
 import { type LayoutMode } from "../state/LayoutSwitchViewModel";
 import { type MediaMenuSnapshot } from "./MediaMenuViewModel";
+import { Config } from "../config/Config";
+import { screenShareConfigured } from "../settings/settings";
+import { setShareDialog } from "../state/quickShare";
+
+// The share dialog, which the share button opens the first time, reads the
+// server's budget from the configuration
+Config.initDefault();
 
 // consts for tests
 const reactionIdentifier = "@user:example.com:DEVICE";
@@ -44,6 +51,7 @@ function menu(
     enabled: true,
     busy: false,
     toggle: fn(),
+    unavailable: undefined,
     options: withDevices
       ? [
           { id: "1", label: { type: "name", name: `${device} 1` } },
@@ -235,8 +243,18 @@ export const SpotlightMode: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("radio", { name: "Grid" }));
     await expect(args.setLayout).toHaveBeenCalledWith("grid");
+    // Nothing was shared from here yet: the button asks first, and what is
+    // chosen there is what it shares at once from then on
+    screenShareConfigured.setValue(false);
+    setShareDialog(null);
     await userEvent.click(canvas.getByRole("switch", { name: "Share screen" }));
-    await expect(args.toggleScreenSharing).toHaveBeenCalled();
+    await expect(args.toggleScreenSharing).not.toHaveBeenCalled();
+    const body = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await body.findByTestId("screenshare_start"));
+    await expect(args.toggleScreenSharing).toHaveBeenCalledTimes(1);
+    await userEvent.click(canvas.getByRole("switch", { name: "Share screen" }));
+    await expect(args.toggleScreenSharing).toHaveBeenCalledTimes(2);
+    screenShareConfigured.setValue(false);
     await userEvent.click(canvas.getByRole("button", { name: "End call" }));
     await expect(args.hangup).toHaveBeenCalled();
   },

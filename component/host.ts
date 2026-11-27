@@ -166,6 +166,7 @@ export function useComponentHostBridge(
     requestVoiceState: async () => await Promise.resolve(undefined),
     // nor sounds of its own for it
     requestSounds: async () => await Promise.resolve(undefined),
+    notifyLeaveSoundPlayed: async () => {},
     voiceState$: NEVER,
     // Whether these exist is itself information, so they are read through
     // rather than wrapped unconditionally

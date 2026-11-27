@@ -386,7 +386,8 @@ function codecOf(stats: Stats[], rtp: Stats | undefined): string | undefined {
   return str(codec?.mimeType)?.replace(/^(audio|video)\//i, "");
 }
 
-function selectedPair(stats: Stats[]): Stats | undefined {
+/** The candidate pair a report's transport runs over. */
+export function selectedPair(stats: Stats[]): Stats | undefined {
   const transport = stats.find((s) => s.type === "transport");
   const pairs = stats.filter((s) => s.type === "candidate-pair");
   return (

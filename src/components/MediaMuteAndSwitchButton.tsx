@@ -43,7 +43,9 @@ import {
   type DeviceLabel,
 } from "../state/MediaDevices";
 import { useMediaDevices } from "../MediaDevicesContext";
+import { type DeviceUnavailability } from "../state/deviceAvailability";
 import { useRootElement } from "../RootElementContext";
+import { useHostOverlay } from "../useHostOverlay";
 import { observeElementSize$ } from "../utils/elementSize";
 import { LiveMicrophoneLevelMeter } from "./MicrophoneLevelMeter";
 import {
@@ -63,6 +65,8 @@ export interface MediaMuteAndSwitchButtonProps {
   onMuteClick?: () => void;
   /** True while mute/unmute operation is syncing. */
   busy?: boolean;
+  /** Why there is no device to turn on, if there is none. */
+  unavailable?: DeviceUnavailability;
   iconsAndLabels: "video" | "audio";
   /** The options available for the media device selector modal */
   options?: MenuOptions[];
@@ -122,6 +126,7 @@ const PREVIEW_GAP = 12;
 export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
   enabled,
   busy,
+  unavailable,
   onMuteClick,
   iconsAndLabels,
   options,
@@ -165,6 +170,9 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
     },
     [onDismissBackgroundImageRefusal],
   );
+  // In a host that keeps the call in a part of its window the menu may
+  // reach out of that part: it is measured against the window then
+  useHostOverlay(menuOpen, () => onOpenChange(false));
   // Scrolled to as it appears, as the list may be scrolled away from it.
   const scrollIntoView = useCallback((element: HTMLElement | null): void => {
     element?.scrollIntoView({ block: "nearest" });
@@ -273,11 +281,13 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
       active={menuOpen}
     />
   );
+  const hasInputs = (options?.length ?? 0) > 0;
   const MuteButton = audioMeter ? MicButton : VideoButton;
   const button = (
     <MuteButton
       enabled={enabled ?? false}
       busy={isBusy}
+      unavailable={unavailable}
       onClick={(e) => {
         onMuteClick?.();
         e.preventDefault();
@@ -293,15 +303,18 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
 
   let optionsButtonLabel: string;
   let menuTitle: string;
+  let noDeviceLabel: string;
   let numberedLabel: (number: number) => string;
   switch (iconsAndLabels) {
     case "video":
+      noDeviceLabel = t("settings.devices.no_camera");
       optionsButtonLabel = t("settings.devices.camera");
       menuTitle = t("settings.devices.camera_source");
       numberedLabel = (n): string =>
         t("settings.devices.camera_numbered", { n });
       break;
     case "audio":
+      noDeviceLabel = t("settings.devices.no_microphone");
       optionsButtonLabel = t("settings.devices.microphone");
       menuTitle = t("settings.devices.mic_source");
       numberedLabel = (n): string =>
@@ -480,7 +493,7 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
           )}
           <MenuScrollSection
             title={optionsButtonLabel}
-            stickyBottomItem={audioMeter}
+            stickyBottomItem={hasInputs && audioMeter}
           >
             {deviceItems(
               "input",
@@ -488,6 +501,15 @@ export const MediaMuteAndSwitchButton: FC<MediaMuteAndSwitchButtonProps> = ({
               selectedOption,
               onSelect,
               numberedLabel,
+            )}
+            {!hasInputs && (
+              <MenuItem
+                as="div"
+                hideChevron
+                disabled
+                label={noDeviceLabel}
+                onSelect={null}
+              />
             )}
           </MenuScrollSection>
           {showEffects && (

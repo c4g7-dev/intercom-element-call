@@ -1,0 +1,105 @@
+/*
+Copyright 2026 InterCom contributors
+
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Element-Commercial
+Please see LICENSE in the repository root for full details.
+*/
+
+/* At the top of the call, over the tiles and clear of the controls at its
+bottom: a quiet surface a step above the call's, with a hairline */
+.banner {
+  position: fixed;
+  z-index: 3;
+  inset-block-start: var(--cpd-space-4x);
+  inset-inline: 0;
+  margin-inline: auto;
+  inline-size: fit-content;
+  max-inline-size: calc(100% - var(--cpd-space-8x));
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cpd-space-2x) var(--cpd-space-4x);
+  padding: var(--cpd-space-2x) var(--cpd-space-2x) var(--cpd-space-2x)
+    var(--cpd-space-4x);
+  border-radius: var(--intercom-radius-tile, 12px);
+  border: 1px solid var(--cpd-color-border-interactive-secondary);
+  background: var(--cpd-color-bg-subtle-secondary);
+  color: var(--cpd-color-text-primary);
+  font: var(--cpd-font-body-sm-medium);
+}
+
+/* Under the notice of being deafened, which has the same place */
+.banner.lowered {
+  inset-block-start: calc(var(--cpd-space-4x) + 48px);
+}
+
+.text {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: var(--cpd-space-2x);
+  min-inline-size: 0;
+}
+
+.dot {
+  color: var(--cpd-color-text-secondary);
+}
+
+/* A call too narrow for one line (a small picture of it in a corner): the two
+halves are two lines, with nothing between them */
+@container element-call (max-width: 560px) {
+  .dot {
+    display: none;
+  }
+}
+
+.countdown {
+  color: var(--cpd-color-text-secondary);
+  /* The digits change every second and must not move what is beside them */
+  font-variant-numeric: tabular-nums;
+}
+
+.buttons {
+  display: flex;
+  flex: none;
+  gap: var(--cpd-space-1x);
+}
+
+.stay,
+.leave {
+  all: unset;
+  box-sizing: border-box;
+  min-block-size: 28px;
+  padding: 0 var(--cpd-space-3x);
+  border-radius: var(--intercom-radius-control, 8px);
+  font: var(--cpd-font-body-sm-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stay {
+  background: var(--cpd-color-bg-action-tertiary-selected);
+  color: var(--cpd-color-text-primary);
+}
+
+.leave {
+  color: var(--cpd-color-text-critical-primary);
+}
+
+.stay:focus-visible,
+.leave:focus-visible {
+  outline: 2px solid var(--cpd-color-border-focused);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .stay:hover {
+    background: var(--cpd-color-gray-500);
+  }
+
+  .leave:hover {
+    background: var(--cpd-color-bg-critical-subtle);
+  }
+}

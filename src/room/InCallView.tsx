@@ -17,6 +17,7 @@ import {
   type JSX,
   type ReactNode,
 } from "react";
+import { map } from "rxjs";
 import useMeasure from "react-use-measure";
 import { type MatrixRTCSession } from "matrix-js-sdk/lib/matrixrtc";
 import classNames from "classnames";
@@ -33,8 +34,18 @@ import {
   isCallAction,
   parseHostVoiceState,
 } from "../state/callActions";
-import { hostCallState$ } from "../state/hostCallState";
+import { type HostCallState, hostCallState$ } from "../state/hostCallState";
+import {
+  ALONE_TIMEOUT_LEFT_REASON,
+  parseAloneTimeout,
+} from "../state/aloneTimer";
+import { useAloneTimer } from "./useAloneTimer";
+import { AloneBanner } from "./AloneBanner";
+import { deviceAvailability$ } from "../state/deviceAvailability";
 import { diag } from "../diagnostics/diag";
+import { useHostConnStats } from "../diagnostics/useHostConnStats";
+import { useShareControls } from "../components/useShareControls";
+import { missingSourceName, shareNotice$ } from "../state/quickShare";
 import { VolumeOffSolidIcon } from "@vector-im/compound-design-tokens/assets/web/icons";
 import { useHostBridge } from "../HostBridge.ts";
 import { useRootElement } from "../RootElementContext";
@@ -217,7 +228,13 @@ export const ActiveCall: FC<ActiveCallProps> = (props) => {
           Config.get().media_quality?.server_egress_budget_mbps ?? 0,
         backgroundEffectsState$,
         hostBridge,
-        autoLeaveWhenOthersLeft,
+        // InterCom: where the host gave a time to stay alone for, the call
+        // is not left the moment the others go: a countdown (see
+        // useAloneTimer below) leaves it, or nothing does
+        autoLeaveWhenOthersLeft:
+          urlParams.intercomAloneTimeout === undefined
+            ? autoLeaveWhenOthersLeft
+            : false,
         waitForCallPickup: waitForCallPickup && sendNotificationType === "ring",
         sentCallNotification$: createSentCallNotification$(
           scope,
@@ -345,7 +362,11 @@ export const InCallView: FC<InCallViewProps> = ({
   );
   const topWithinRoot = bounds.top - rootTop;
 
-  const { showControls, header: headerStyle } = useUrlParams();
+  const {
+    showControls,
+    header: headerStyle,
+    intercomAloneTimeout,
+  } = useUrlParams();
 
   const muteAllAudioSetting = useBehavior(muteAllAudio$);
   // Deafened is every incoming sound of the call off, whatever the setting
@@ -357,23 +378,78 @@ export const InCallView: FC<InCallViewProps> = ({
 
   // Mute, deafen and camera, from the keyboard and from the host (whose
   // shortcuts also work while its window does not have the focus)
+  const sharingScreenNow = useBehavior(vm.sharingScreen$);
+  const canShowShareDialog = useBehavior(vm.showModals$);
+  const shareControls = useShareControls(
+    vm.toggleScreenSharing,
+    sharingScreenNow,
+    canShowShareDialog,
+  );
+  // InterCom: left alone in a private call, the user stays for a while
+  // (the host's setting), and is told so here and by the host. The host is
+  // told why right before the call leaves by itself.
+  const lastHostState = useRef<HostCallState | null>(null);
+  const othersCount$ = useMemo(
+    () => vm.soundRoster$.pipe(map((roster) => roster.others.length)),
+    [vm],
+  );
+  const onAloneExpired = useCallback(() => {
+    if (lastHostState.current !== null) {
+      const state = { ...lastHostState.current };
+      delete state.alone;
+      hostBridge
+        .notifyCallState({ ...state, left_reason: ALONE_TIMEOUT_LEFT_REASON })
+        .catch(() => undefined);
+    }
+    // As a hangup of the user's: the same way out, and the same one sound
+    vm.hangup();
+  }, [hostBridge, vm]);
+  const aloneTimer = useAloneTimer(
+    intercomAloneTimeout,
+    othersCount$,
+    onAloneExpired,
+  );
+  const aloneState = useBehavior(aloneTimer.state$);
+  const onAloneLeave = useCallback(() => {
+    aloneTimer.leave();
+    vm.hangup();
+  }, [aloneTimer, vm]);
   const callActions = useMemo(
     () =>
       createCallActions({
         audio: muteStates.audio,
         video: muteStates.video,
-        toggleScreenShare: () => vm.toggleScreenSharing,
+        // As the share button of the call does: at once with the settings
+        // of the last share, and the dialog the first time
+        toggleScreenShare: () =>
+          vm.toggleScreenSharing && ((): void => shareControls.press("action")),
+        openShareSettings: shareControls.openSettings,
+        stayInCall: aloneTimer.stay,
+        // The URL says whether anything counts down in this call at all (not
+        // in a voice channel); the host's setting changing only says how long
+        setAloneTimeout: (timeout) => {
+          const parsed = parseAloneTimeout(timeout);
+          if (intercomAloneTimeout !== undefined && parsed !== undefined)
+            aloneTimer.setTimeout(parsed);
+        },
       }),
-    [muteStates, vm],
+    [muteStates, vm, shareControls, aloneTimer, intercomAloneTimeout],
   );
   useEffect(() => callActions.reset, [callActions]);
   const hostBridgeForActions = useHostBridge();
+  const mediaDevices = useMediaDevices();
   useEffect(() => {
     const subscription = hostBridgeForActions.callAction$.subscribe(
       (request) => {
         const action = request.data?.action;
         if (isCallAction(action))
-          request.reply(callActions.perform(action, "host"));
+          request.reply(
+            callActions.perform(
+              action,
+              "host",
+              request.data as Record<string, unknown>,
+            ),
+          );
         else {
           // Not something this version knows: nothing is done about it
           diag("call_action", { action: "unknown", source: "host" });
@@ -417,17 +493,34 @@ export const InCallView: FC<InCallViewProps> = ({
     const subscription = hostCallState$({
       audioEnabled$: muteStates.audio.enabled$,
       videoEnabled$: muteStates.video.enabled$,
+      audioState$: deviceAvailability$("microphone", {
+        available$: mediaDevices.audioInput.available$,
+        enabled$: muteStates.audio.enabled$,
+      }),
+      videoState$: deviceAvailability$("camera", {
+        available$: mediaDevices.videoInput.available$,
+        enabled$: muteStates.video.enabled$,
+      }),
       deafened$,
       sharingScreen$: vm.sharingScreen$,
+      canShareScreen: vm.toggleScreenSharing !== null,
       reconnecting$: vm.reconnecting$,
       participants$: vm.hostParticipants$,
+      alone$: aloneTimer.state$,
     }).subscribe((state) => {
+      lastHostState.current = state;
       hostBridgeForActions.notifyCallState(state).catch(() => {
         // A host that is not InterCom does not know the message
       });
     });
     return (): void => subscription.unsubscribe();
-  }, [hostBridgeForActions, muteStates, vm]);
+  }, [hostBridgeForActions, muteStates, mediaDevices, vm, aloneTimer]);
+  // And how the connection is, for its signal bars and connection details
+  useHostConnStats(
+    hostBridgeForActions,
+    vm.localMember$,
+    matrixInfo.e2eeSystem,
+  );
   const performCallAction = useCallback(
     (action: CallAction) => void callActions.perform(action, "keyboard"),
     [callActions],
@@ -584,6 +677,29 @@ export const InCallView: FC<InCallViewProps> = ({
       modal={false}
     >
       {t("error.screen_share_failed")}
+    </Toast>
+  );
+
+  // A share started with the settings of the last one, of which an audio
+  // source is gone: said in passing, the share runs
+  const shareNotice = useBehavior(shareNotice$);
+  const shareNoticeNames = (shareNotice ?? [])
+    .map(missingSourceName)
+    .filter((name) => name !== undefined);
+  const shareNoticeToast = (
+    <Toast
+      onDismiss={() => shareNotice$.next(null)}
+      open={shareNotice !== null && sharingScreenNow}
+      autoDismiss={6000}
+      modal={false}
+    >
+      {shareNotice !== null && shareNoticeNames.length === shareNotice.length
+        ? t("screen_share_options.missing_sources", {
+            sources: shareNoticeNames.join(", "),
+          })
+        : t("screen_share_options.missing_sources_unnamed", {
+            count: shareNotice?.length ?? 0,
+          })}
     </Toast>
   );
 
@@ -851,6 +967,14 @@ export const InCallView: FC<InCallViewProps> = ({
           {t("deafened_indicator")}
         </div>
       )}
+      {aloneState.kind === "alone" && (
+        <AloneBanner
+          deadline={aloneState.deadline}
+          onStay={aloneTimer.stay}
+          onLeave={onAloneLeave}
+          lowered={deafened}
+        />
+      )}
       <MemberAudioRenderer members={remoteMembers} muted={muteAllAudio} />
       <TileFocusContext.Provider value={tileFocus}>
         {renderContent()}
@@ -860,6 +984,7 @@ export const InCallView: FC<InCallViewProps> = ({
       <RingingAudioRenderer vm={ringingVm} muted={muteAllAudio} />
       {reconnectingToast}
       {screenShareToast}
+      {shareNoticeToast}
       {earpieceOverlay}
       <ReactionsOverlay vm={vm} />
       <DiagnosticsOverlay />

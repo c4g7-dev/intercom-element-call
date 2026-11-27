@@ -21,6 +21,7 @@ import {
   DIAG_STATS_INTERVAL_MS,
   diagSample$,
   recordCallDiagnostics,
+  setDetailedReadings,
 } from "./CallDiagnostics";
 import { diagBuffer, type DiagRecord, resetDiag } from "./diag";
 
@@ -129,6 +130,56 @@ describe("recordCallDiagnostics", () => {
     });
     expect(diagSample$.value?.tracks).toHaveLength(2);
     expect(diagSample$.value?.checks[0]).toMatchObject({ status: "pass" });
+  });
+
+  it("reads twice as often while somebody watches, and logs no more for it", async () => {
+    const { localTracks$ } = record(scope);
+    let readings = 0;
+    localTracks$.next([
+      microphone(() => {
+        readings++;
+        return {
+          stats: [
+            { type: "transport", selectedCandidatePairId: "P" },
+            {
+              type: "candidate-pair",
+              id: "P",
+              localCandidateId: "L",
+              currentRoundTripTime: 0.02,
+            },
+            { type: "local-candidate", id: "L", protocol: "udp" },
+          ],
+        };
+      }),
+    ]);
+    await vi.advanceTimersByTimeAsync(DIAG_STATS_INTERVAL_MS);
+    expect(readings).toBe(1);
+    expect(diagSample$.value?.link).toEqual({ transport: "udp", rttMs: 20 });
+
+    // At once, then every half interval
+    setDetailedReadings(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(readings).toBe(2);
+    await vi.advanceTimersByTimeAsync(DIAG_STATS_INTERVAL_MS * 2);
+    expect(readings).toBe(6);
+    // One written at the start, then every other one
+    expect(of("tick")).toHaveLength(3);
+
+    setDetailedReadings(false);
+    await vi.advanceTimersByTimeAsync(DIAG_STATS_INTERVAL_MS * 2);
+    expect(readings).toBe(8);
+    expect(of("tick")).toHaveLength(5);
+
+    // A call that ends while somebody watched: the next one starts unwatched
+    setDetailedReadings(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(readings).toBe(9);
+    scope.end();
+    scope = new ObservableScope();
+    const next = record(scope);
+    next.localTracks$.next([microphone(() => (readings++, { stats: [] }))]);
+    await vi.advanceTimersByTimeAsync(DIAG_STATS_INTERVAL_MS);
+    expect(readings).toBe(10);
   });
 
   it("carries on past a track that cannot be read, and ends with the scope", async () => {

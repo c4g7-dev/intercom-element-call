@@ -321,6 +321,27 @@ describe("UrlParams", () => {
       expect(params.sendNotificationType).toBeUndefined();
     });
 
+    it("takes the time to stay alone in a call for from the host", () => {
+      const withTimeout = (value: string): unknown =>
+        computeUrlParams(
+          `?intent=join_existing_dm&widgetId=1234&parentUrl=parent.org&intercomAloneTimeout=${value}`,
+        ).intercomAloneTimeout;
+      expect(withTimeout("300")).toBe(300);
+      expect(withTimeout("never")).toBe("never");
+      expect(withTimeout("soon")).toBeUndefined();
+      // Not asked for: as upstream, and the intent's auto leave stands
+      const without = computeUrlParams(
+        "?intent=join_existing_dm&widgetId=1234&parentUrl=parent.org",
+      );
+      expect(without.intercomAloneTimeout).toBeUndefined();
+      expect(without.autoLeaveWhenOthersLeft).toBe(true);
+      // Only a host can ask for it
+      expect(
+        computeUrlParams("?intent=join_existing_dm&intercomAloneTimeout=300")
+          .intercomAloneTimeout,
+      ).toBeUndefined();
+    });
+
     it("accepts join_existing", () => {
       expect(
         computeUrlParams(

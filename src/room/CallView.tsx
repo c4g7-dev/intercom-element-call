@@ -55,6 +55,11 @@ import {
   callEventAudioSounds,
   type CallEventSounds,
 } from "./CallEventAudioRenderer";
+import {
+  callPlaysOwnLeave,
+  hostSounds,
+  hostSoundsNow,
+} from "../state/callEventSounds";
 import { useLatest } from "../useLatest";
 import {
   ConnectionLostError,
@@ -181,6 +186,11 @@ const LoadedCallView: FC<LoadedProps> = ({
       muted: muteAllAudio,
     }),
   );
+  // InterCom: whose the sound of the user's own leave is has to be known by
+  // the time the user leaves (see onLeft); the answer is asked for once
+  useEffect(() => {
+    void hostSounds(hostBridge);
+  }, [hostBridge]);
   // This should use `useEffectEvent` (only available in experimental versions)
   useEffect(() => {
     if (
@@ -391,20 +401,25 @@ const LoadedCallView: FC<LoadedProps> = ({
       reason: "timeout" | "user" | "allOthersLeft" | "decline" | "error",
     ): void => {
       let audioPromise: Promise<void> | undefined = undefined;
+      // InterCom: where the host plays the user's own leave, the call plays
+      // none for it: not for a hangup, and not when everybody else is gone
+      // (CallEventAudioRenderer is quiet from the leave on). The end of a
+      // call is one sound that way, whichever side hung up
+      const ownLeaveIsOurs = callPlaysOwnLeave(hostSoundsNow(hostBridge));
       switch (reason) {
-        case "allOthersLeft":
-          // When "allOthersLeft", the leaveSoundEffect$ in CallEventAudioRenderer
-          // already plays the "left" sound when the remote participant's media
-          // disappears. We play it here silenced (volumeOverwrite = 0) so we have the right duration in the audioPromise.
-          // (which is what delays asking the host to close us)
-          audioPromise = leaveSoundContext.current?.playSound("left", 0);
-          break;
         case "timeout":
         case "decline":
-          audioPromise = leaveSoundContext.current?.playSound(reason);
+          // That sound is the end of this call: the host is told, and keeps
+          // its own leave sound back
+          audioPromise = leaveSoundContext.current
+            ?.playSound(reason)
+            .then(async () =>
+              hostBridge.notifyLeaveSoundPlayed().catch(() => undefined),
+            );
           break;
         default:
-          audioPromise = leaveSoundContext.current?.playSound("left");
+          if (ownLeaveIsOurs)
+            audioPromise = leaveSoundContext.current?.playSound("left");
       }
 
       setJoined(false);

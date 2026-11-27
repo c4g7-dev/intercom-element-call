@@ -291,9 +291,33 @@ test("Should ask the host to close when all other left and play a sound", async 
   expect(close).not.toHaveBeenCalled();
   resolvePlaySound.resolve();
 
-  expect(playSound).toHaveBeenCalledWith("left", 0);
+  // InterCom: the call's own leave sound, heard: the sound of the other one
+  // leaving is not played once the user's own leave has begun
+  expect(playSound).toHaveBeenCalledWith("left");
   await waitFor(() => expect(close).toHaveBeenCalledOnce());
 }, 80000);
+
+test.each(["Leave", "SimulateOtherLeft"])(
+  "InterCom: plays no leave sound on %s where the host plays the user's own",
+  async (button) => {
+    const user = userEvent.setup();
+    const close = vi.fn().mockResolvedValue(undefined);
+    const hostBridge: HostBridge = {
+      ...nullHostBridge,
+      setAlwaysOnScreen: vi.fn().mockResolvedValue(undefined),
+      requestSounds: vi
+        .fn()
+        .mockResolvedValue({ hostPlaysOwnCues: true, sounds: {} }),
+      close,
+    };
+    const { getByText } = createCallView(hostBridge);
+    await flushPromises();
+    await user.click(getByText(button));
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(playSound).not.toHaveBeenCalled();
+    expect(hostBridge.requestSounds).toHaveBeenCalledOnce();
+  },
+);
 
 test("Waits for the host to say when to join, when preloaded", async () => {
   // Nothing to match device names against; the host names none anyway

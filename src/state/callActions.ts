@@ -9,7 +9,8 @@ import { BehaviorSubject } from "rxjs";
 
 import { type Behavior } from "./Behavior";
 import { diag } from "../diagnostics/diag";
-import { soundEffectVolume } from "../settings/settings";
+import { setDetailedReadings } from "../diagnostics/CallDiagnostics";
+import { diagnosticsOverlay, soundEffectVolume } from "../settings/settings";
 
 /**
  * What a shortcut or the host can ask of the call: the microphone, the
@@ -21,7 +22,27 @@ export type CallAction =
   | "unmute"
   | "toggle-camera"
   | "toggle-deafen"
-  | "toggle-screenshare";
+  | "toggle-screenshare"
+  /** Opens the dialog of the share: its settings, or its audio while on */
+  | "screenshare-settings"
+  /** Shows or hides the diagnostics overlay, as Ctrl+Alt+D does */
+  | "toggle-diagnostics"
+  /**
+   * The host starts or stops showing the details of the connection: while it
+   * does, it is told them every second (see `connStats.ts`)
+   */
+  | "connection-details-on"
+  | "connection-details-off"
+  /**
+   * The user wants to stay in a private call they were left alone in: the
+   * countdown to leaving it starts over (see `aloneTimer.ts`)
+   */
+  | "stay-in-call"
+  /**
+   * The host's setting of how long to stay alone in a private call changed;
+   * the new one comes with the action as `timeout` (seconds, or "never")
+   */
+  | "alone-timeout";
 
 const callActions = new Set<string>([
   "toggle-mute",
@@ -30,6 +51,12 @@ const callActions = new Set<string>([
   "toggle-camera",
   "toggle-deafen",
   "toggle-screenshare",
+  "screenshare-settings",
+  "toggle-diagnostics",
+  "connection-details-on",
+  "connection-details-off",
+  "stay-in-call",
+  "alone-timeout",
 ]);
 
 export function isCallAction(value: unknown): value is CallAction {
@@ -71,7 +98,7 @@ const deafenedSubject$ = new BehaviorSubject(false);
 /** Whether the user is deafened: every incoming sound of the call is muted. */
 export const deafened$: Behavior<boolean> = deafenedSubject$;
 
-/** The shortcut a key press is, if it is one: Ctrl+Shift+M, D or V. */
+/** The shortcut a key press is, if it is one: Ctrl+Shift+M, D, V or S. */
 export function callActionForKey(
   event: Pick<
     KeyboardEvent,
@@ -87,6 +114,8 @@ export function callActionForKey(
       return "toggle-deafen";
     case "v":
       return "toggle-camera";
+    case "s":
+      return "toggle-screenshare";
     default:
       return undefined;
   }
@@ -107,6 +136,16 @@ interface CallActionInputs {
    * it is only there once the call is.
    */
   toggleScreenShare?: () => (() => void) | null | undefined;
+  /** Opens the dialog of the screen share. */
+  openShareSettings?: () => void;
+  /** Shows or hides the diagnostics overlay. */
+  toggleDiagnostics?: () => void;
+  /** Takes whether the host shows the details of the connection. */
+  setConnectionDetails?: (wanted: boolean) => void;
+  /** Starts the countdown of a call the user is alone in over. */
+  stayInCall?: () => void;
+  /** Takes another timeout for being alone in the call, as the host sent it. */
+  setAloneTimeout?: (timeout: unknown) => void;
 }
 
 let toneContext: AudioContext | undefined;
@@ -154,8 +193,19 @@ export function createCallActions({
   video,
   playSound = playToggleSound,
   toggleScreenShare,
+  openShareSettings,
+  toggleDiagnostics = (): void =>
+    diagnosticsOverlay.setValue(!diagnosticsOverlay.getValue()),
+  setConnectionDetails = setDetailedReadings,
+  stayInCall,
+  setAloneTimeout,
 }: CallActionInputs): {
-  perform: (action: CallAction, source: string) => CallActionState;
+  /** @param detail What the host sent along with the action, where it did */
+  perform: (
+    action: CallAction,
+    source: string,
+    detail?: Record<string, unknown>,
+  ) => CallActionState;
   /**
    * Takes the mute and deafen the host keeps: when the call is joined, and
    * whenever they change there. Nothing is played for it, here or for any
@@ -222,7 +272,11 @@ export function createCallActions({
     }
   });
 
-  const perform = (action: CallAction, source: string): CallActionState => {
+  const perform = (
+    action: CallAction,
+    source: string,
+    detail?: Record<string, unknown>,
+  ): CallActionState => {
     const before = state();
     switch (action) {
       case "toggle-camera":
@@ -230,6 +284,23 @@ export function createCallActions({
         break;
       case "toggle-screenshare":
         toggleScreenShare?.()?.();
+        break;
+      case "screenshare-settings":
+        openShareSettings?.();
+        break;
+      case "toggle-diagnostics":
+        toggleDiagnostics();
+        break;
+      case "connection-details-on":
+      case "connection-details-off":
+        setConnectionDetails(action === "connection-details-on");
+        // Asked for whenever the host's popover opens: not worth a record
+        return state();
+      case "stay-in-call":
+        stayInCall?.();
+        break;
+      case "alone-timeout":
+        setAloneTimeout?.(detail?.timeout);
         break;
       case "toggle-deafen":
         if (deafenedSubject$.value) {
@@ -297,6 +368,7 @@ export function createCallActions({
       micSubscription.unsubscribe();
       if (deafenedSubject$.value) deafenedSubject$.next(false);
       micBeforeDeafen = false;
+      setConnectionDetails(false);
     },
   };
 }

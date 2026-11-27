@@ -15,6 +15,14 @@ import {
   switchMap,
 } from "rxjs";
 
+import { type DeviceAvailability } from "./deviceAvailability";
+import {
+  type ALONE_TIMEOUT_LEFT_REASON,
+  type AloneState,
+  type HostAloneState,
+  hostAloneState,
+} from "./aloneTimer";
+
 // Type aliases rather than interfaces, so that they satisfy the widget API's
 // index-signature payload types.
 
@@ -38,11 +46,30 @@ export type HostParticipantState = {
 export type HostCallState = {
   audio_enabled: boolean;
   video_enabled: boolean;
+  /**
+   * How the microphone and the camera stand: on, off, or not there to be
+   * turned on ("no-device", "no-permission"). The host shows the same as the
+   * call's own buttons from this.
+   */
+  audio_state: DeviceAvailability;
+  video_state: DeviceAvailability;
   deafened: boolean;
   screen_sharing: boolean;
+  /** Whether a screen can be shared here at all */
+  can_share_screen: boolean;
   /** Whether the connection to the call is being re-established */
   reconnecting: boolean;
   participants: HostParticipantState[];
+  /**
+   * The countdown of a private call the user was left alone in: how long
+   * until the call leaves by itself. Absent while none runs.
+   */
+  alone?: HostAloneState;
+  /**
+   * Why the call is about to leave by itself: sent once, right before it
+   * does, so that the host can say why the call ended.
+   */
+  left_reason?: typeof ALONE_TIMEOUT_LEFT_REASON;
 };
 
 /** What of a member's media the state is read from. */
@@ -107,10 +134,17 @@ function mergeByUser(states: HostParticipantState[]): HostParticipantState[] {
 interface HostCallStateInputs {
   audioEnabled$: Observable<boolean>;
   videoEnabled$: Observable<boolean>;
+  audioState$: Observable<DeviceAvailability>;
+  videoState$: Observable<DeviceAvailability>;
   deafened$: Observable<boolean>;
   sharingScreen$: Observable<boolean>;
+  canShareScreen: boolean;
   reconnecting$: Observable<boolean>;
   participants$: Observable<HostParticipantState[]>;
+  /** Whether the user is alone in a private call, and until when they stay */
+  alone$?: Observable<AloneState | undefined>;
+  /** The time, in ms: what is left of a countdown is told from it */
+  now?: () => number;
 }
 
 /** How long the state must hold still before the host is told: speaking flickers. */
@@ -123,35 +157,54 @@ export const HOST_CALL_STATE_DEBOUNCE_MS = 120;
 export function hostCallState$({
   audioEnabled$,
   videoEnabled$,
+  audioState$,
+  videoState$,
   deafened$,
   sharingScreen$,
+  canShareScreen,
   reconnecting$,
   participants$,
+  alone$ = of(undefined),
+  now = (): number => Date.now(),
 }: HostCallStateInputs): Observable<HostCallState> {
   return combineLatest(
     [
       audioEnabled$,
       videoEnabled$,
+      audioState$,
+      videoState$,
       deafened$,
       sharingScreen$,
       reconnecting$,
       participants$,
+      alone$,
     ],
     (
       audio_enabled,
       video_enabled,
+      audio_state,
+      video_state,
       deafened,
       screen_sharing,
       reconnecting,
       participants,
-    ): HostCallState => ({
-      audio_enabled,
-      video_enabled,
-      deafened,
-      screen_sharing,
-      reconnecting,
-      participants,
-    }),
+      aloneState,
+    ): HostCallState => {
+      // What is left at this moment: the host counts down from there
+      const alone = hostAloneState(aloneState, now());
+      return {
+        audio_enabled,
+        video_enabled,
+        audio_state,
+        video_state,
+        deafened,
+        screen_sharing,
+        can_share_screen: canShareScreen,
+        reconnecting,
+        participants,
+        ...(alone !== undefined && { alone }),
+      };
+    },
   ).pipe(
     debounceTime(HOST_CALL_STATE_DEBOUNCE_MS),
     distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),

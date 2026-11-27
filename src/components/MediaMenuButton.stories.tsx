@@ -44,6 +44,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 const empty = {
+  unavailable: undefined,
   outputOptions: [],
   selectedOutput: undefined,
   selectOutput: undefined,
@@ -190,4 +191,92 @@ export const WithoutDevices: Story = {
       "true",
     );
   },
+};
+
+export const MicrophoneMuted: Story = {
+  args: { ...Microphone.args, enabled: false },
+  play: undefined,
+};
+
+export const CameraOff: Story = {
+  args: { ...Camera.args, enabled: false },
+  play: undefined,
+};
+
+/** Checks that the button says why it does nothing, and does nothing. */
+async function expectUnavailable(
+  canvasElement: HTMLElement,
+  name: string,
+  reason: string,
+  toggle: unknown,
+): Promise<void> {
+  const button = within(canvasElement).getByRole("switch", { name });
+  await expect(button).toHaveAttribute("aria-disabled", "true");
+  await expect(button).toHaveAccessibleDescription(reason);
+  await userEvent.click(button);
+  await expect(toggle).not.toHaveBeenCalled();
+}
+
+/** No microphone, and no speaker to pick either: the button alone. */
+export const MicrophoneNotFound: Story = {
+  args: {
+    ...Microphone.args,
+    enabled: false,
+    toggle: undefined,
+    unavailable: "no-device",
+    options: [],
+    outputOptions: [],
+  },
+  play: async ({ canvasElement }) =>
+    expectUnavailable(canvasElement, "Microphone", "No microphone found", fn()),
+};
+
+/** The speaker can still be picked; the menu says there is no microphone. */
+export const MicrophoneNotFoundWithSpeaker: Story = {
+  args: {
+    ...MicrophoneNotFound.args,
+    outputOptions: Microphone.args.outputOptions,
+  },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Microphone" }),
+    );
+    await expect(
+      await within(document.body).findByText("No microphone found"),
+    ).toBeInTheDocument();
+  },
+};
+
+export const MicrophoneBlocked: Story = {
+  args: { ...Microphone.args, enabled: false, unavailable: "no-permission" },
+  play: async ({ args, canvasElement }) =>
+    expectUnavailable(
+      canvasElement,
+      "Microphone",
+      "Microphone access blocked — check system settings",
+      args.toggle,
+    ),
+};
+
+export const CameraNotFound: Story = {
+  args: {
+    ...Camera.args,
+    enabled: false,
+    toggle: undefined,
+    unavailable: "no-device",
+    options: [],
+  },
+  play: async ({ canvasElement }) =>
+    expectUnavailable(canvasElement, "Camera", "No camera found", fn()),
+};
+
+export const CameraBlocked: Story = {
+  args: { ...Camera.args, enabled: false, unavailable: "no-permission" },
+  play: async ({ args, canvasElement }) =>
+    expectUnavailable(
+      canvasElement,
+      "Camera",
+      "Camera access blocked — check system settings",
+      args.toggle,
+    ),
 };

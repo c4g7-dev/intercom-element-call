@@ -22,6 +22,7 @@ import {
   UserIntent,
 } from "./UrlConfiguration";
 import { redact } from "./utils/redact";
+import { type AloneTimeout, parseAloneTimeout } from "./state/aloneTimer";
 
 // Moved to their own module, so that a host can import them without the rest
 // of this one; re-exported here as they always were
@@ -131,6 +132,13 @@ export interface UrlProperties {
    */
   homeserver: string | null;
 
+  /**
+   * InterCom: how long the user stays in a call after everybody else left it,
+   * in seconds or "never" (`intercomAloneTimeout`). A host sets it for
+   * private calls; with it the call is not left at once when the others go
+   * (`autoLeave`), but after a countdown. Absent, nothing changes.
+   */
+  intercomAloneTimeout?: AloneTimeout;
   /**
    * The rageshake submit URL. This is only used in the embedded package of Element Call.
    */
@@ -335,6 +343,9 @@ export const computeUrlParams = (search = "", hash = ""): UrlParams => {
     posthogApiHost: parser.getParam("posthogApiHost"),
     posthogApiKey: parser.getParam("posthogApiKey"),
     posthogUserId: parser.getParam("posthogUserId"),
+    intercomAloneTimeout: isWidget
+      ? parseAloneTimeout(parser.getParam("intercomAloneTimeout"))
+      : undefined,
     rageshakeSubmitUrl: parser.getParam("rageshakeSubmitUrl"),
     sentryDsn: parser.getParam("sentryDsn"),
     sentryEnvironment: parser.getParam("sentryEnvironment"),

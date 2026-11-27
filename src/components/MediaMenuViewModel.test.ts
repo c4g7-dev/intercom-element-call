@@ -135,6 +135,23 @@ describe("createAudioMenuViewModel", () => {
   );
 });
 
+describe("a device that is not there to be turned on", () => {
+  it("is said of the camera, of which none is listed, and not of the microphone", () => {
+    expect(audioMenu().unavailable$.value).toBeUndefined();
+    expect(cameraMenu().unavailable$.value).toBe("no-device");
+  });
+
+  it("is said of the microphone once none is listed", () => {
+    const withoutMicrophone = createAudioMenuViewModel(
+      testScope(),
+      mockMuteStates(),
+      mockMediaDevices({}),
+      constant(false),
+    );
+    expect(withoutMicrophone.unavailable$.value).toBe("no-device");
+  });
+});
+
 describe("createCameraMenuViewModel", () => {
   afterEach(() => {
     backgroundEffectSetting.setValue("none");

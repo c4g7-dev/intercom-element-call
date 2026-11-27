@@ -6,6 +6,7 @@ Please see LICENSE in the repository root for full details.
 */
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { combineLatest } from "rxjs";
 
 import { type CallViewModel } from "../state/CallViewModel/CallViewModel";
 // InterCom: its own two chimes for joining and leaving, made by
@@ -24,11 +25,8 @@ import { useAudioContext } from "../useAudioContext";
 import { prefetchSounds } from "../soundUtils";
 import { useLatest } from "../useLatest";
 import { useHostBridge } from "../HostBridge";
-import {
-  rosterCueDecision,
-  type RosterCue,
-  type RosterCueHistory,
-} from "../state/callEventSounds";
+import { hostSounds, RosterCueGate } from "../state/callEventSounds";
+import { MAX_PARTICIPANT_COUNT_FOR_SOUND } from "../state/CallViewModel/CallViewModel";
 
 export const callEventAudioSounds = prefetchSounds({
   join: {
@@ -65,18 +63,21 @@ export function CallEventAudioRenderer({
   muted?: boolean;
 }): ReactNode {
   const hostBridge = useHostBridge();
+  const hostBridgeRef = useLatest(hostBridge);
   // InterCom: the host may have sound files of the user's to play instead of
   // the built-in ones, and may play the user's own join and leave itself
   const [sounds, setSounds] = useState(callEventAudioSounds);
-  const hostPlaysOwnCues = useRef(false);
+  // Whose the user's own join and leave sounds are: undefined until the host
+  // answered, or it is known that there is none to answer
+  const [hostPlaysOwnCues, setHostPlaysOwnCues] = useState<boolean>();
   const mutedRef = useLatest(muted === true);
   useEffect(() => {
     let over = false;
-    void hostBridge
-      .requestSounds()
+    void hostSounds(hostBridge)
       .then((host) => {
-        if (over || !host) return;
-        hostPlaysOwnCues.current = host.hostPlaysOwnCues;
+        if (over) return;
+        setHostPlaysOwnCues(host?.hostPlaysOwnCues === true);
+        if (!host) return;
         if (Object.keys(host.sounds).length > 0) {
           setSounds(
             callEventAudioSounds.then((builtIn) => ({
@@ -99,23 +100,58 @@ export function CallEventAudioRenderer({
   });
   const audioEngineRef = useLatest(audioEngineCtx);
 
+  // Who came and who went, see RosterCueGate: the others only, each change
+  // once it has stood for a moment, and nothing from when the user leaves
+  const gate = useRef<RosterCueGate | null>(null);
+  const pollGate = useRef<() => void>(() => {});
   useEffect(() => {
-    // Who came and who went: one sound of a kind at a time, none while the
-    // list fills up after the user's own join where the host plays that
-    const joinedAt = Date.now();
-    let history: RosterCueHistory = {};
-    const rosterCue = (cue: RosterCue): void => {
-      const decision = rosterCueDecision(cue, history, {
-        now: Date.now(),
-        joinedAt,
-        hostPlaysOwnCues: hostPlaysOwnCues.current,
-        silenced: mutedRef.current,
-      });
-      history = decision.history;
-      if (decision.play) void audioEngineRef.current?.playSound(cue);
+    const rosterGate = new RosterCueGate({
+      now: Date.now,
+      maxCount: MAX_PARTICIPANT_COUNT_FOR_SOUND,
+    });
+    gate.current = rosterGate;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      for (const cue of rosterGate.poll({ silenced: mutedRef.current })) {
+        void audioEngineRef.current?.playSound(cue);
+        // The host plays the user's own leave: it is told of this one, so
+        // that the two do not follow each other when the call ends
+        if (cue === "left")
+          hostBridgeRef.current.notifyLeaveSoundPlayed().catch(() => undefined);
+      }
+      const due = rosterGate.nextDueAt();
+      if (due !== undefined)
+        timer = setTimeout(poll, Math.max(0, due - Date.now()));
     };
-    const joinSub = vm.joinSoundEffect$.subscribe(() => rosterCue("join"));
-    const leftSub = vm.leaveSoundEffect$.subscribe(() => rosterCue("left"));
+    pollGate.current = poll;
+    const rosterSub = combineLatest([
+      vm.soundRoster$,
+      vm.reconnecting$,
+    ]).subscribe(([roster, reconnecting]) => {
+      rosterGate.update(roster, reconnecting);
+      poll();
+    });
+    // The user leaves, or the call ends: whatever falls apart after this is
+    // not somebody leaving. The one sound of it is the user's own leave
+    const leaveSub = vm.leave$.subscribe(() => rosterGate.close());
+    return (): void => {
+      rosterGate.close();
+      if (timer !== undefined) clearTimeout(timer);
+      rosterSub.unsubscribe();
+      leaveSub.unsubscribe();
+      gate.current = null;
+    };
+  }, [audioEngineRef, hostBridgeRef, mutedRef, vm]);
+
+  useEffect(() => {
+    if (hostPlaysOwnCues === undefined) return;
+    gate.current?.hostAnswered(hostPlaysOwnCues);
+    pollGate.current();
+  }, [hostPlaysOwnCues, vm]);
+
+  useEffect(() => {
     const handRaisedSub = vm.newHandRaised$.subscribe(
       () => void audioEngineRef.current?.playSound("raiseHand"),
     );
@@ -124,12 +160,10 @@ export function CallEventAudioRenderer({
     );
 
     return (): void => {
-      joinSub.unsubscribe();
-      leftSub.unsubscribe();
       handRaisedSub.unsubscribe();
       screenshareSub.unsubscribe();
     };
-  }, [audioEngineRef, mutedRef, vm]);
+  }, [audioEngineRef, vm]);
 
   return <></>;
 }

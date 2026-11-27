@@ -14,6 +14,7 @@ import { useBehavior } from "../useBehavior";
 import { MatrixRTCMode } from "../config/ConfigOptions";
 import { type UnstableLivekitTransport } from "matrix-js-sdk/lib/matrixrtc";
 import { type EffectId } from "../tracks/backgroundEffectCatalog";
+import { defaultShareAudio, sharePlatform } from "../state/quickShare";
 
 export class Setting<T> {
   public constructor(
@@ -240,7 +241,20 @@ export const callLayoutPreference = new Setting<"auto" | "equal-grid">(
  */
 export const screenShareAudioSource = new Setting<string>(
   "intercom-screen-share-audio-source",
-  "system",
+  // The system's own sound where the screen picker hands it over (Windows,
+  // macOS); on Linux it has none, and the sources are picked
+  defaultShareAudio(
+    sharePlatform(typeof navigator === "undefined" ? "" : navigator.userAgent),
+  ),
+);
+
+/**
+ * Whether a share was ever started from its dialog on this device: from then
+ * on the share button starts one right away with what was chosen.
+ */
+export const screenShareConfigured = new Setting<boolean>(
+  "intercom-screen-share-configured",
+  false,
 );
 
 /** One source of a screen share's audio mix. */

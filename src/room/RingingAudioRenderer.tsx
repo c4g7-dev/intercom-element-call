@@ -12,10 +12,15 @@ import { type RingingMediaViewModel } from "../state/media/RingingMediaViewModel
 import { useBehavior } from "../useBehavior";
 import { useInitial } from "../useInitial";
 import { prefetchSounds } from "../soundUtils";
-import ringtoneMp3 from "../sound/ringtone.mp3?url&no-inline";
-import ringtoneOgg from "../sound/ringtone.ogg?url&no-inline";
+// InterCom: its own ringback, made by scripts/intercom-sounds.py (ogg only: the
+// app is Chromium). The file is one round of the loop, with its rest.
+import ringbackOgg from "../sound/intercom_ringback.ogg?url&no-inline";
+import { useHostBridge } from "../HostBridge";
 import { type UseAudioContext, useAudioContext } from "../useAudioContext";
 import { useLatest } from "../useLatest";
+
+/** The pause between two rounds of the ringback, on top of the rest in the file. */
+const RINGBACK_GAP_S = 0.1;
 
 interface RingingAudioRendererProps {
   vm: RingingMediaViewModel | null;
@@ -27,10 +32,14 @@ export const RingingAudioRenderer: FC<RingingAudioRendererProps> = ({
   muted,
 }) => {
   // Preload a waiting and decline sounds
+  const hostBridge = useHostBridge();
   const sounds = useInitial(async () => {
-    return prefetchSounds({
-      ringtone: { mp3: ringtoneMp3, ogg: ringtoneOgg },
+    const builtIn = prefetchSounds({
+      ringtone: { ogg: ringbackOgg },
     });
+    // InterCom: the host may have a ringback of the user's own to play instead
+    const host = await hostBridge.requestSounds().catch(() => undefined);
+    return host?.ringback ? { ringtone: host.ringback } : builtIn;
   });
   const audio = useAudioContext({
     sounds,
@@ -56,9 +65,11 @@ const ActiveRingingAudioRenderer: FC<ActiveRingingAudioRendererProps> = ({
   // While ringing, loop the ringtone
   useEffect((): void | (() => void) => {
     if (pickupState === "ringing" && audio_.current) {
+      // InterCom: the file has its own rest at the end, so the next round
+      // follows at once (a delay there has to be) instead of a file's length later
       const endSound = audio_.current.playSoundLooping(
         "ringtone",
-        audio_.current.soundDuration["ringtone"] ?? 1,
+        RINGBACK_GAP_S,
       );
       return () => {
         void endSound().catch((e) => {

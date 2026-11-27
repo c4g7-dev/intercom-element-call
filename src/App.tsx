@@ -35,6 +35,7 @@ import { ErrorPage, LoadingPage } from "./FullScreenView";
 import { Initializer } from "./initializer";
 import { type WidgetHelpers } from "./widget";
 import { useTheme } from "./useTheme";
+import { useHostOverlayPin } from "./useHostOverlay";
 import { BackgroundEffectsProvider } from "./tracks/BackgroundEffectsContext";
 import { type AppViewModel } from "./state/AppViewModel";
 import { MediaDevicesContext } from "./MediaDevicesContext";
@@ -109,6 +110,7 @@ const BackgroundProvider: FC<SimpleProviderProps> = ({ children }) => {
 
 const ThemeProvider: FC<SimpleProviderProps> = ({ children }) => {
   useTheme();
+  useHostOverlayPin();
   return children;
 };
 

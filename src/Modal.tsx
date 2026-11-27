@@ -25,6 +25,7 @@ import styles from "./Modal.module.css";
 import overlayStyles from "./Overlay.module.css";
 import { useMediaQuery } from "./useMediaQuery";
 import { useRootElement } from "./RootElementContext";
+import { useHostOverlay } from "./useHostOverlay";
 
 export interface Props {
   title: string;
@@ -43,6 +44,11 @@ export interface Props {
    * Class name to be used when in modal mode (desktop).
    */
   classNameModal?: string;
+  /**
+   * Class name of the part under the header that holds the children, and
+   * scrolls when they do not fit.
+   */
+  classNameBody?: string;
   /**
    * The controlled open state of the modal.
    */
@@ -73,6 +79,7 @@ export const Modal: FC<Props> = ({
   className,
   classNameDrawer,
   classNameModal,
+  classNameBody,
   open,
   onDismiss,
   tabbed,
@@ -83,6 +90,9 @@ export const Modal: FC<Props> = ({
   // Empirically, Chrome on Android can end up not matching (hover: none), but
   // still matching (pointer: coarse) :/
   const touchscreen = useMediaQuery("(hover: none) or (pointer: coarse)");
+  // A host that keeps the call in a part of its window gives the dialog the
+  // whole of it
+  useHostOverlay(open, onDismiss);
   const onOpenChange = useCallback(
     (open: boolean) => {
       if (!open) onDismiss?.();
@@ -103,7 +113,10 @@ export const Modal: FC<Props> = ({
         dismissible={onDismiss !== undefined}
       >
         <Drawer.Portal container={rootElement}>
-          <Drawer.Overlay className={classNames(overlayStyles.bg)} />
+          <Drawer.Overlay
+            className={classNames(overlayStyles.bg)}
+            data-intercom-backdrop
+          />
           <Drawer.Content
             className={classNames(
               className,
@@ -126,7 +139,9 @@ export const Modal: FC<Props> = ({
                   <Drawer.Title>{title}</Drawer.Title>
                 </VisuallyHidden>
               </div>
-              <div className={styles.body}>{children}</div>
+              <div className={classNames(styles.body, classNameBody)}>
+                {children}
+              </div>
             </div>
           </Drawer.Content>
         </Drawer.Portal>
@@ -160,6 +175,7 @@ export const Modal: FC<Props> = ({
         <DialogPortal container={rootElement}>
           <DialogOverlay
             className={classNames(overlayStyles.bg, overlayStyles.animate)}
+            data-intercom-backdrop
             // Radix dismisses on a pointer down outside the dialog, but only
             // for event targets that are a `Node` of the window it was loaded
             // in. A host can move the dialog into another window (a Document
@@ -191,7 +207,9 @@ export const Modal: FC<Props> = ({
                 {hideHeader ? (
                   <VisuallyHidden asChild>{titleNode}</VisuallyHidden>
                 ) : null}
-                <div className={styles.body}>{children}</div>
+                <div className={classNames(styles.body, classNameBody)}>
+                  {children}
+                </div>
               </div>
             </Glass>
           </DialogContent>

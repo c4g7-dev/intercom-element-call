@@ -18,6 +18,7 @@ import { combineLatest, NEVER, type Observable } from "rxjs";
 import { type MediaDevice } from "./MediaDevices";
 import { type Handler } from "./MuteStates";
 import { describeError, diag } from "../diagnostics/diag";
+import { rememberDeviceAttempt } from "./deviceAvailability";
 
 /** How a mute switch gets a track where there is none. */
 export interface TrackSupply {
@@ -124,6 +125,7 @@ export function followMuteState(
         }),
       ]);
       attempts = 0;
+      rememberDeviceAttempt(source, undefined);
       diag("publish_result", {
         source,
         attempt,
@@ -140,6 +142,7 @@ export function followMuteState(
         error: describeError(e),
       };
       if (isDeviceRefusal(e)) {
+        rememberDeviceAttempt(source, e);
         logger.error(`Failed to publish the ${source}`, e);
         diag("publish_result", { ...failure, outcome: "device_refused" });
         attempts = 0;

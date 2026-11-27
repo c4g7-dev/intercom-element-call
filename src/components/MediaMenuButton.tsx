@@ -29,6 +29,7 @@ export const MediaMenuButton: FC<Props> = ({ vm, kind, size }) => {
   const enabled = useBehavior(vm.enabled$);
   const busy = useBehavior(vm.busy$);
   const toggle = useBehavior(vm.toggle$);
+  const unavailable = useBehavior(vm.unavailable$);
   const options = useBehavior(vm.options$);
   const selected = useBehavior(vm.selected$);
   const select = useBehavior(vm.select$);
@@ -72,13 +73,15 @@ export const MediaMenuButton: FC<Props> = ({ vm, kind, size }) => {
     }
   }, [refusal, t]);
 
-  if (options.length === 0) {
+  // A speaker can be picked without a microphone
+  if (options.length === 0 && outputOptions.length === 0) {
     const PlainButton = kind === "audio" ? MicButton : VideoButton;
     return (
       <PlainButton
         size={size}
         enabled={enabled}
         busy={busy}
+        unavailable={unavailable}
         onClick={toggle}
         disabled={busy || toggle === undefined}
         data-testid={testId}
@@ -92,6 +95,7 @@ export const MediaMenuButton: FC<Props> = ({ vm, kind, size }) => {
       enabled={enabled}
       busy={busy}
       onMuteClick={toggle}
+      unavailable={unavailable}
       data-testid={testId}
       options={options}
       selectedOption={selected}
@@ -106,6 +110,7 @@ export const MediaMenuButton: FC<Props> = ({ vm, kind, size }) => {
       enabled={enabled}
       busy={busy}
       onMuteClick={toggle}
+      unavailable={unavailable}
       options={options}
       selectedOption={selected}
       onSelect={select}

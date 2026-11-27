@@ -27,6 +27,7 @@ import {
   checkKey,
   evaluateChecks,
 } from "./checks";
+import { connLink, type ConnLink } from "./connStats";
 import { describeError, diag } from "./diag";
 import {
   diagSources,
@@ -36,6 +37,17 @@ import {
 } from "./trackStats";
 
 export const DIAG_STATS_INTERVAL_MS = 2000;
+
+const detailed$ = new BehaviorSubject(false);
+/**
+ * Whether somebody is looking at live figures (the host's connection
+ * details): the readings are then taken twice as often. The log keeps its
+ * pace either way.
+ */
+export const detailedReadings$: Behavior<boolean> = detailed$;
+export function setDetailedReadings(wanted: boolean): void {
+  if (detailed$.value !== wanted) detailed$.next(wanted);
+}
 
 /** The screen share we publish, as far as the call knows of it. */
 export interface ShareDiagnostics {
@@ -62,6 +74,8 @@ export interface DiagSample {
   share: ShareDiagnostics | undefined;
   tracks: TrackRecord[];
   checks: CheckResult[];
+  /** The candidate pair the media runs over: ours to the server where we send. */
+  link?: ConnLink;
 }
 
 const sample$ = new BehaviorSubject<DiagSample | null>(null);
@@ -198,13 +212,16 @@ export function recordCallDiagnostics(
   const counters = new Map<string, TrackCounters>();
   const lastSoundAt: Record<string, number> = {};
   let reading = false;
+  let loggedAt = 0;
   const read = async (): Promise<void> => {
     const now = Date.now();
     const records: TrackRecord[] = [];
+    const links: { local: boolean; link: ConnLink }[] = [];
     await Promise.all(
       tracks$.value.map(async ({ participant: owner, local, track }) => {
         const diagnostics = await track.diagnostics().catch(() => undefined);
         if (diagnostics === undefined) return;
+        links.push({ local, link: connLink(diagnostics.stats) });
         const { record, counters: next } = toTrackRecord(
           {
             participant: owner,
@@ -237,22 +254,31 @@ export function recordCallDiagnostics(
       lastSoundAt,
     });
     const viewers = participation.remoteMembers$.value.length;
-    for (const record of records) diag("track", { ...record });
-    diag("tick", {
-      participant,
-      state: participation.state$.value.kind,
-      viewers,
-      micEnabled: micEnabled$.value,
-      cameraEnabled: cameraEnabled$.value,
-      tracks: records.length,
-      ...(shareNow && { share: shareNow }),
-      checks: Object.fromEntries(
-        checks.map((check) => [
-          checkKey(check),
-          { status: check.status, detail: check.detail },
-        ]),
-      ),
-    });
+    const link = (
+      links.find((l) => l.local && l.link.transport) ??
+      links.find((l) => l.link.transport) ??
+      links[0]
+    )?.link;
+    // Readings taken in between for somebody who watches are not written down
+    const log = now - loggedAt >= intervalMs * 0.9;
+    if (log) loggedAt = now;
+    if (log) for (const record of records) diag("track", { ...record });
+    if (log)
+      diag("tick", {
+        participant,
+        state: participation.state$.value.kind,
+        viewers,
+        micEnabled: micEnabled$.value,
+        cameraEnabled: cameraEnabled$.value,
+        tracks: records.length,
+        ...(shareNow && { share: shareNow }),
+        checks: Object.fromEntries(
+          checks.map((check) => [
+            checkKey(check),
+            { status: check.status, detail: check.detail },
+          ]),
+        ),
+      });
     sample$.next({
       t: now,
       participant,
@@ -263,20 +289,32 @@ export function recordCallDiagnostics(
       share: shareNow,
       tracks: records,
       checks,
+      link,
     });
   };
   // The browser's own timer rather than a scheduled observable: the readings
   // are wall-clock work on the side, not part of the call's reactive state
-  const polling = setInterval(() => {
+  const tick = (): void => {
     // A reading that outlasts the interval is not piled upon
     if (reading) return;
     reading = true;
     read()
       .catch((e) => diag("error", { where: "stats", ...describeError(e) }))
       .finally(() => (reading = false));
-  }, intervalMs);
-  scope.onEnd(() => {
+  };
+  let polling: ReturnType<typeof setInterval> | undefined;
+  let paced = false;
+  // Twice as often while somebody watches, and at once when they start to
+  const pace = detailed$.subscribe((detailed) => {
     clearInterval(polling);
+    polling = setInterval(tick, detailed ? intervalMs / 2 : intervalMs);
+    if (detailed && paced) tick();
+    paced = true;
+  });
+  scope.onEnd(() => {
+    pace.unsubscribe();
+    clearInterval(polling);
+    detailed$.next(false);
     diag("call_end", { durationMs: Date.now() - joinedAt });
     sample$.next(null);
   });

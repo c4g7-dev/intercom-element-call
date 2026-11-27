@@ -175,7 +175,7 @@ exports[`InCallView > rendering > renders 1`] = `
         class="_settingsLogoContainer_20b7b4"
       >
         <button
-          aria-labelledby="_r_b_"
+          aria-labelledby="_r_e_"
           class="_icon-button_1215g_8 _settingsOnlyShowWide_20b7b4"
           data-kind="secondary"
           data-testid="settings-bottom-left"
@@ -310,7 +310,7 @@ exports[`InCallView > rendering > renders 1`] = `
         class="_buttons_20b7b4"
       >
         <button
-          aria-labelledby="_r_g_"
+          aria-labelledby="_r_j_"
           class="_button_1nw83_8 _settingsOnlyShowNarrow_20b7b4 _has-icon_1nw83_60 _icon-only_1nw83_53"
           data-kind="secondary"
           data-size="lg"
@@ -332,60 +332,161 @@ exports[`InCallView > rendering > renders 1`] = `
           </svg>
         </button>
         <button
-          aria-busy="false"
           aria-checked="false"
+          aria-describedby="_r_o_"
           aria-disabled="true"
-          aria-labelledby="_r_l_"
+          aria-label="Microphone"
           class="_button_1nw83_8 _has-icon_1nw83_60 _icon-only_1nw83_53"
-          data-kind="primary"
+          data-kind="secondary"
           data-size="lg"
           data-testid="incall_mute"
+          data-unavailable="no-device"
           role="switch"
           tabindex="0"
         >
           <svg
             aria-hidden="true"
+            data-unavailable-badge="true"
             fill="currentColor"
             height="24"
             viewBox="0 0 24 24"
             width="24"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path
-              d="M8 8v-.006l6.831 6.832-.002.002 1.414 1.415.003-.003 1.414 1.414-.003.003L20.5 20.5a1 1 0 0 1-1.414 1.414l-3.022-3.022A7.95 7.95 0 0 1 13 19.938V21a1 1 0 0 1-2 0v-1.062A8 8 0 0 1 4 12a1 1 0 1 1 2 0 6 6 0 0 0 8.587 5.415l-1.55-1.55A4.005 4.005 0 0 1 8 12v-1.172L2.086 4.914A1 1 0 0 1 3.5 3.5zm9.417 6.583 1.478 1.477A7.96 7.96 0 0 0 20 12a1 1 0 0 0-2 0c0 .925-.21 1.8-.583 2.583M8.073 5.238l7.793 7.793q.132-.495.134-1.031V6a4 4 0 0 0-7.927-.762"
+            <mask
+              id="unavailablert"
+            >
+              <rect
+                fill="#fff"
+                height="24"
+                width="24"
+              />
+              <circle
+                cx="18.5"
+                cy="18.5"
+                fill="#000"
+                r="6.25"
+              />
+            </mask>
+            <g
+              mask="url(#unavailablert)"
+            >
+              <svg
+                fill="currentColor"
+                height="24"
+                viewBox="0 0 24 24"
+                width="24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M8 6a4 4 0 1 1 8 0v6a4 4 0 0 1-8 0z"
+                />
+                <path
+                  d="M5 11a1 1 0 0 1 1 1 6 6 0 0 0 12 0 1 1 0 1 1 2 0 8 8 0 0 1-7 7.938V21a1 1 0 1 1-2 0v-1.062A8 8 0 0 1 4 12a1 1 0 0 1 1-1"
+                />
+              </svg>
+            </g>
+            <circle
+              cx="18.5"
+              cy="18.5"
+              fill="var(--cpd-color-icon-critical-primary)"
+              r="5"
+            />
+            <rect
+              fill="var(--cpd-color-icon-on-solid-primary)"
+              height="2"
+              rx="1"
+              width="6"
+              x="15.5"
+              y="17.5"
             />
           </svg>
         </button>
+        <span
+          hidden=""
+          id="_r_o_"
+        >
+          No microphone found
+        </span>
         <button
-          aria-busy="false"
           aria-checked="false"
+          aria-describedby="_r_u_"
           aria-disabled="true"
-          aria-labelledby="_r_q_"
+          aria-label="Camera"
           class="_button_1nw83_8 _has-icon_1nw83_60 _icon-only_1nw83_53"
-          data-kind="primary"
+          data-kind="secondary"
           data-size="lg"
           data-testid="incall_videomute"
+          data-unavailable="no-device"
           role="switch"
           tabindex="0"
         >
           <svg
             aria-hidden="true"
+            data-unavailable-badge="true"
             fill="currentColor"
             height="24"
             viewBox="0 0 24 24"
             width="24"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path
-              d="M2.747 2.753 4.35 4.355l.007-.003L18 17.994v.012l3.247 3.247a1 1 0 0 1-1.414 1.414l-2.898-2.898A2 2 0 0 1 16 20H6a4 4 0 0 1-4-4V8c0-.892.292-1.715.785-2.38L1.333 4.166a1 1 0 0 1 1.414-1.414M18 15.166 6.834 4H16a2 2 0 0 1 2 2v4.286l3.35-2.871a1 1 0 0 1 1.65.76v7.65a1 1 0 0 1-1.65.76L18 13.715z"
+            <mask
+              id="unavailabler13"
+            >
+              <rect
+                fill="#fff"
+                height="24"
+                width="24"
+              />
+              <circle
+                cx="18.5"
+                cy="18.5"
+                fill="#000"
+                r="6.25"
+              />
+            </mask>
+            <g
+              mask="url(#unavailabler13)"
+            >
+              <svg
+                fill="currentColor"
+                height="24"
+                viewBox="0 0 24 24"
+                width="24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M6 4h10a2 2 0 0 1 2 2v4.286l3.35-2.871a1 1 0 0 1 1.65.76v7.65a1 1 0 0 1-1.65.76L18 13.715V18a2 2 0 0 1-2 2H6a4 4 0 0 1-4-4V8a4 4 0 0 1 4-4"
+                />
+              </svg>
+            </g>
+            <circle
+              cx="18.5"
+              cy="18.5"
+              fill="var(--cpd-color-icon-critical-primary)"
+              r="5"
+            />
+            <rect
+              fill="var(--cpd-color-icon-on-solid-primary)"
+              height="2"
+              rx="1"
+              width="6"
+              x="15.5"
+              y="17.5"
             />
           </svg>
         </button>
+        <span
+          hidden=""
+          id="_r_u_"
+        >
+          No camera found
+        </span>
         <button
           aria-disabled="false"
           aria-expanded="false"
           aria-haspopup="true"
-          aria-labelledby="_r_v_"
+          aria-labelledby="_r_14_"
           class="_button_1nw83_8 _raiseHand_20b7b4 _has-icon_1nw83_60 _icon-only_1nw83_53"
           data-kind="secondary"
           data-size="lg"
@@ -408,7 +509,7 @@ exports[`InCallView > rendering > renders 1`] = `
           </svg>
         </button>
         <button
-          aria-labelledby="_r_17_"
+          aria-labelledby="_r_1c_"
           class="_button_1nw83_8 _has-icon_1nw83_60 _icon-only_1nw83_53 _destructive_1nw83_110"
           data-kind="primary"
           data-size="lg"
@@ -440,8 +541,8 @@ exports[`InCallView > rendering > renders 1`] = `
         >
           <input
             aria-label="Spotlight"
-            aria-labelledby="_r_1d_"
-            name="_r_1c_"
+            aria-labelledby="_r_1i_"
+            name="_r_1h_"
             type="radio"
             value="spotlight"
           />
@@ -465,9 +566,9 @@ exports[`InCallView > rendering > renders 1`] = `
         >
           <input
             aria-label="Grid"
-            aria-labelledby="_r_1i_"
+            aria-labelledby="_r_1n_"
             checked=""
-            name="_r_1c_"
+            name="_r_1h_"
             type="radio"
             value="grid"
           />
@@ -489,8 +590,8 @@ exports[`InCallView > rendering > renders 1`] = `
         >
           <input
             aria-label="Equal grid"
-            aria-labelledby="_r_1n_"
-            name="_r_1c_"
+            aria-labelledby="_r_1s_"
+            name="_r_1h_"
             type="radio"
             value="equal-grid"
           />
